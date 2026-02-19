@@ -1,0 +1,498 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Traffic Congestion - Multi Camera Streams</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            min-height: 100vh;
+            color: #fff;
+        }
+        
+        .container {
+            max-width: 1800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        
+        header {
+            text-align: center;
+            padding: 30px 0;
+            border-bottom: 2px solid #e94560;
+            margin-bottom: 30px;
+        }
+        
+        header h1 {
+            font-size: 2.5rem;
+            color: #e94560;
+            margin-bottom: 10px;
+        }
+        
+        header p {
+            color: #8892b0;
+            font-size: 1.1rem;
+        }
+        
+        .controls {
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 15px;
+            padding: 20px;
+            margin-bottom: 30px;
+            border: 1px solid rgba(233, 69, 96, 0.3);
+        }
+        
+        .controls h3 {
+            color: #e94560;
+            margin-bottom: 15px;
+        }
+        
+        .add-stream-form {
+            display: flex;
+            gap: 15px;
+            flex-wrap: wrap;
+            align-items: end;
+        }
+        
+        .form-group {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+        
+        .form-group label {
+            color: #8892b0;
+            font-size: 0.85rem;
+        }
+        
+        .form-group input,
+        .form-group select {
+            padding: 10px 15px;
+            border: 1px solid rgba(233, 69, 96, 0.3);
+            border-radius: 8px;
+            background: rgba(255, 255, 255, 0.05);
+            color: #fff;
+            font-size: 0.95rem;
+            min-width: 200px;
+        }
+        
+        .form-group input:focus,
+        .form-group select:focus {
+            outline: none;
+            border-color: #e94560;
+        }
+        
+        .btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 8px;
+            font-size: 0.95rem;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        
+        .btn-primary {
+            background: linear-gradient(135deg, #e94560 0%, #c73e54 100%);
+            color: #fff;
+        }
+        
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(233, 69, 96, 0.3);
+        }
+        
+        .btn-danger {
+            background: #f44336;
+            color: #fff;
+        }
+        
+        .btn-danger:hover {
+            background: #d32f2f;
+        }
+        
+        .btn-secondary {
+            background: rgba(255, 255, 255, 0.1);
+            color: #fff;
+        }
+        
+        .btn-small {
+            padding: 5px 10px;
+            font-size: 0.8rem;
+        }
+        
+        .streams-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(500px, 1fr));
+            gap: 25px;
+        }
+        
+        @media (max-width: 768px) {
+            .streams-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+        
+        .stream-card {
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 15px;
+            overflow: hidden;
+            border: 1px solid rgba(233, 69, 96, 0.3);
+            transition: transform 0.3s;
+        }
+        
+        .stream-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+        }
+        
+        .stream-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 15px 20px;
+            background: rgba(233, 69, 96, 0.1);
+            border-bottom: 1px solid rgba(233, 69, 96, 0.3);
+        }
+        
+        .stream-title {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .stream-title h3 {
+            font-size: 1.1rem;
+            color: #fff;
+        }
+        
+        .status-badge {
+            padding: 3px 10px;
+            border-radius: 20px;
+            font-size: 0.75rem;
+            font-weight: bold;
+        }
+        
+        .status-active {
+            background: rgba(76, 175, 80, 0.2);
+            color: #4CAF50;
+        }
+        
+        .status-inactive {
+            background: rgba(244, 67, 54, 0.2);
+            color: #f44336;
+        }
+        
+        .stream-actions {
+            display: flex;
+            gap: 5px;
+        }
+        
+        .stream-video {
+            position: relative;
+            width: 100%;
+            aspect-ratio: 16/9;
+            background: #000;
+        }
+        
+        .stream-video img {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+        }
+        
+        .stream-info {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 15px;
+            padding: 15px 20px;
+            background: rgba(0, 0, 0, 0.2);
+        }
+        
+        .info-item {
+            text-align: center;
+        }
+        
+        .info-item .label {
+            color: #8892b0;
+            font-size: 0.75rem;
+            margin-bottom: 3px;
+        }
+        
+        .info-item .value {
+            font-size: 1.1rem;
+            font-weight: bold;
+            color: #e94560;
+        }
+        
+        .stream-url {
+            padding: 10px 20px;
+            background: rgba(0, 0, 0, 0.3);
+            border-top: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        
+        .stream-url code {
+            font-size: 0.8rem;
+            color: #8892b0;
+            word-break: break-all;
+        }
+        
+        .no-streams {
+            text-align: center;
+            padding: 60px 20px;
+            color: #8892b0;
+        }
+        
+        .no-streams h3 {
+            color: #e94560;
+            margin-bottom: 10px;
+        }
+        
+        .alert {
+            padding: 12px 15px;
+            border-radius: 8px;
+            margin-bottom: 15px;
+        }
+        
+        .alert-success {
+            background: rgba(76, 175, 80, 0.2);
+            border: 1px solid #4CAF50;
+            color: #4CAF50;
+        }
+        
+        .alert-error {
+            background: rgba(244, 67, 54, 0.2);
+            border: 1px solid #f44336;
+            color: #f44336;
+        }
+        
+        .hidden {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🎥 Multi-Camera Traffic Monitoring</h1>
+            <p>Manage and view multiple video streams simultaneously</p>
+        </header>
+        
+        <div class="controls">
+            <h3>➕ Add New Stream</h3>
+            <div id="alertBox" class="alert hidden"></div>
+            <form id="addStreamForm" class="add-stream-form">
+                <div class="form-group">
+                    <label>Stream ID</label>
+                    <input type="text" id="streamId" placeholder="e.g., camera1" required>
+                </div>
+                <div class="form-group">
+                    <label>Stream Name</label>
+                    <input type="text" id="streamName" placeholder="e.g., Main Road" required>
+                </div>
+                <div class="form-group">
+                    <label>Source URL / Device</label>
+                    <input type="text" id="streamSource" placeholder="0, rtsp://..., http://..." required>
+                </div>
+                <button type="submit" class="btn btn-primary">Add Stream</button>
+            </form>
+        </div>
+        
+        <div id="streamsContainer" class="streams-grid">
+            <div class="no-streams">
+                <h3>No Active Streams</h3>
+                <p>Add a stream above to get started</p>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        let streams = {};
+        const alertBox = document.getElementById('alertBox');
+        
+        function showAlert(message, type = 'success') {
+            alertBox.textContent = message;
+            alertBox.className = `alert alert-${type}`;
+            alertBox.classList.remove('hidden');
+            setTimeout(() => alertBox.classList.add('hidden'), 5000);
+        }
+        
+        function createStreamCard(stream) {
+            const card = document.createElement('div');
+            card.className = 'stream-card';
+            card.id = `card-${stream.id}`;
+            card.innerHTML = `
+                <div class="stream-header">
+                    <div class="stream-title">
+                        <h3>${stream.name}</h3>
+                        <span class="status-badge ${stream.active ? 'status-active' : 'status-inactive'}">
+                            ${stream.active ? 'LIVE' : 'OFFLINE'}
+                        </span>
+                    </div>
+                    <div class="stream-actions">
+                        <button onclick="restartStream('${stream.id}')" class="btn btn-secondary btn-small" title="Restart">
+                            🔄
+                        </button>
+                        <button onclick="deleteStream('${stream.id}')" class="btn btn-danger btn-small" title="Delete">
+                            🗑️
+                        </button>
+                    </div>
+                </div>
+                <div class="stream-video">
+                    <img id="video-${stream.id}" src="/video_feed/${stream.id}" alt="${stream.name}">
+                </div>
+                <div class="stream-info">
+                    <div class="info-item">
+                        <div class="label">FPS</div>
+                        <div class="value" id="fps-${stream.id}">${stream.fps || '--'}</div>
+                    </div>
+                    <div class="info-item">
+                        <div class="label">Frames</div>
+                        <div class="value" id="frames-${stream.id}">${stream.frames || 0}</div>
+                    </div>
+                    <div class="info-item">
+                        <div class="label">Status</div>
+                        <div class="value">${stream.active ? 'ON' : 'OFF'}</div>
+                    </div>
+                </div>
+                <div class="stream-url">
+                    <code>URL: ${window.location.origin}/video_feed/${stream.id}</code>
+                </div>
+            `;
+            return card;
+        }
+        
+        function updateStreamsDisplay() {
+            const container = document.getElementById('streamsContainer');
+            
+            if (Object.keys(streams).length === 0) {
+                container.innerHTML = `
+                    <div class="no-streams">
+                        <h3>No Active Streams</h3>
+                        <p>Add a stream above to get started</p>
+                    </div>
+                `;
+                return;
+            }
+            
+            container.innerHTML = '';
+            Object.values(streams).forEach(stream => {
+                container.appendChild(createStreamCard(stream));
+            });
+        }
+        
+        async function loadStreams() {
+            try {
+                const response = await fetch('/api/streams');
+                const data = await response.json();
+                
+                // Convert array to object
+                streams = {};
+                data.streams.forEach(s => {
+                    streams[s.id] = s;
+                });
+                
+                updateStreamsDisplay();
+            } catch (error) {
+                console.error('Failed to load streams:', error);
+            }
+        }
+        
+        async function refreshStreamInfo() {
+            try {
+                const response = await fetch('/api/streams');
+                const data = await response.json();
+                
+                data.streams.forEach(stream => {
+                    if (streams[stream.id]) {
+                        streams[stream.id] = stream;
+                        // Update individual elements without full re-render
+                        const fpsEl = document.getElementById(`fps-${stream.id}`);
+                        const framesEl = document.getElementById(`frames-${stream.id}`);
+                        if (fpsEl) fpsEl.textContent = stream.fps || '--';
+                        if (framesEl) framesEl.textContent = stream.frames || 0;
+                    }
+                });
+            } catch (error) {
+                console.error('Failed to refresh stream info:', error);
+            }
+        }
+        
+        document.getElementById('addStreamForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const id = document.getElementById('streamId').value;
+            const name = document.getElementById('streamName').value;
+            const source = document.getElementById('streamSource').value;
+            
+            try {
+                const response = await fetch('/api/streams', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ id, name, source })
+                });
+                
+                const result = await response.json();
+                if (result.success) {
+                    showAlert(`Stream "${name}" added successfully`);
+                    document.getElementById('addStreamForm').reset();
+                    streams[result.stream.id] = result.stream;
+                    updateStreamsDisplay();
+                } else {
+                    showAlert(result.message || 'Failed to add stream', 'error');
+                }
+            } catch (error) {
+                showAlert('Error adding stream', 'error');
+            }
+        });
+        
+        async function deleteStream(streamId) {
+            if (!confirm(`Delete stream "${streams[streamId]?.name || streamId}"?`)) return;
+            
+            try {
+                const response = await fetch(`/api/streams/${streamId}`, {
+                    method: 'DELETE'
+                });
+                
+                const result = await response.json();
+                if (result.success) {
+                    showAlert('Stream deleted');
+                    delete streams[streamId];
+                    updateStreamsDisplay();
+                }
+            } catch (error) {
+                showAlert('Error deleting stream', 'error');
+            }
+        }
+        
+        async function restartStream(streamId) {
+            try {
+                const response = await fetch(`/api/streams/${streamId}/start`, {
+                    method: 'POST'
+                });
+                
+                const result = await response.json();
+                if (result.success) {
+                    showAlert('Stream restarted');
+                    streams[streamId] = result.stream;
+                    updateStreamsDisplay();
+                }
+            } catch (error) {
+                showAlert('Error restarting stream', 'error');
+            }
+        }
+        
+        // Initialize
+        loadStreams();
+        setInterval(refreshStreamInfo, 2000);
+    </script>
+</body>
+</html>

@@ -1,0 +1,49 @@
+# Multi-Stream Configuration
+# Define multiple video sources here
+
+streams:
+  # Example: Webcam
+  - id: camera1
+    name: "Main Entrance"
+    url: 0  # 0 for default webcam
+    line_y: 500
+    line_x_start: 100
+    line_x_end: 1050
+
+  # Example: IP Camera (RTSP)
+  # - id: camera2
+  #   name: "Highway North"
+  #   url: "rtsp://username:password@192.168.1.100:554/stream"
+  #   line_y: 400
+  #   line_x_start: 50
+  #   line_x_end: 1200
+
+  # Example: HTTP Stream
+  # - id: camera3
+  #   name: "Downtown Junction"
+  #   url: "http://192.168.1.101:8080/video"
+  #   line_y: 600
+  #   line_x_start: 200
+  #   line_x_end: 1000
+
+  # Example: Video File
+  # - id: camera4
+  #   name: "Recorded Feed"
+  #   url: "/path/to/traffic.mp4"
+  #   line_y: 500
+  #   line_x_start: 100
+  #   line_x_end: 1050
+
+# Detection Settings
+detection:
+  model: "yolov8n.pt"
+  confidence: 0.3
+  
+# Processing
+processing:
+  interval: 600  # Send data every 10 minutes (seconds)
+  
+# Firebase (optional)
+firebase:
+  enabled: true
+  credentials_path: "firebase-key.json"

@@ -1,0 +1,42 @@
+# Smart Traffic Management System - Requirements
+# Python 3.8+ recommended, tested on Python 3.11
+
+# Core Dependencies
+ultralytics>=8.0.0
+torch>=2.0.0
+torchvision>=0.15.0
+opencv-python>=4.8.0
+numpy>=1.24.0
+
+# DeepSORT Dependencies
+scipy>=1.10.0
+easydict>=1.10
+
+# Web Framework
+Flask>=2.3.0
+flask-socketio>=5.3.0
+python-socketio>=5.8.0
+eventlet>=0.33.0
+
+# Database
+# For SQLite (included with Python)
+# For PostgreSQL + PostGIS (production): psycopg2-binary>=2.9.0, GeoAlchemy2>=0.14.0
+
+# Web Scraping (for CCTV extraction)
+beautifulsoup4>=4.12.0
+lxml>=4.9.0
+requests>=2.31.0
+
+# Real-time Communication
+websocket-client>=1.6.0
+
+# Utilities
+pillow>=10.0.0
+tqdm>=4.65.0
+
+# Optional: Firebase for cloud storage
+# firebase-admin>=6.0.0
+
+# Development (Optional)
+pytest>=7.4.0
+black>=23.0.0

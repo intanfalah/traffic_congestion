@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test Dashboard</title>
+    <style>
+        body { font-family: Arial; padding: 20px; background: #1a1a2e; color: white; }
+        .status { padding: 10px; margin: 10px 0; border-radius: 5px; }
+        .ok { background: #4CAF50; }
+        .error { background: #f44336; }
+        .info { background: #2196F3; }
+        pre { background: rgba(0,0,0,0.3); padding: 10px; overflow-x: auto; }
+    </style>
+</head>
+<body>
+    <h1>🚦 Traffic System Test</h1>
+    <div id="log"></div>
+    
+    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+    <script>
+        const log = document.getElementById('log');
+        
+        function addLog(message, type='info') {
+            const div = document.createElement('div');
+            div.className = `status ${type}`;
+            div.textContent = message;
+            log.appendChild(div);
+        }
+        
+        addLog('Connecting to server...');
+        
+        const socket = io();
+        
+        socket.on('connect', () => {
+            addLog('✅ Connected to server', 'ok');
+        });
+        
+        socket.on('connect_error', (err) => {
+            addLog('❌ Connection error: ' + err, 'error');
+        });
+        
+        socket.on('init_data', (data) => {
+            addLog('✅ Received init_data', 'ok');
+            const pre = document.createElement('pre');
+            pre.textContent = JSON.stringify(data, null, 2);
+            log.appendChild(pre);
+        });
+        
+        socket.on('traffic_update', (data) => {
+            addLog('📊 Traffic update: ' + data.cctv_id, 'info');
+        });
+        
+        // Also fetch API directly
+        fetch('/api/cctvs')
+            .then(r => r.json())
+            .then(data => {
+                addLog('✅ API /api/cctvs working', 'ok');
+                const pre = document.createElement('pre');
+                pre.textContent = 'CCTVs: ' + data.cctvs.length;
+                log.appendChild(pre);
+            })
+            .catch(e => addLog('❌ API error: ' + e, 'error'));
+        
+        fetch('/api/traffic/status')
+            .then(r => r.json())
+            .then(data => {
+                addLog('✅ API /api/traffic/status working', 'ok');
+            })
+            .catch(e => addLog('❌ API error: ' + e, 'error'));
+    </script>
+</body>
+</html>

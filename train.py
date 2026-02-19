@@ -7,16 +7,15 @@ import torch
 import torch.nn as nn
 
 from ultralytics.nn.tasks import DetectionModel
-from ultralytics.yolo import v8
-from ultralytics.yolo.data import build_dataloader
-from ultralytics.yolo.data.dataloaders.v5loader import create_dataloader
-from ultralytics.yolo.engine.trainer import BaseTrainer
-from ultralytics.yolo.utils import DEFAULT_CONFIG, colorstr
-from ultralytics.yolo.utils.loss import BboxLoss
-from ultralytics.yolo.utils.ops import xywh2xyxy
-from ultralytics.yolo.utils.plotting import plot_images, plot_results
-from ultralytics.yolo.utils.tal import TaskAlignedAssigner, dist2bbox, make_anchors
-from ultralytics.yolo.utils.torch_utils import de_parallel
+from ultralytics.data import build_dataloader
+from ultralytics.data.dataloaders.v5loader import create_dataloader
+from ultralytics.engine.trainer import BaseTrainer
+from ultralytics.utils import DEFAULT_CONFIG, colorstr
+from ultralytics.utils.loss import BboxLoss
+from ultralytics.utils.ops import xywh2xyxy
+from ultralytics.utils.plotting import plot_images, plot_results
+from ultralytics.utils.tal import TaskAlignedAssigner, dist2bbox, make_anchors
+from ultralytics.utils.torch_utils import de_parallel
 
 
 # BaseTrainer python usage

@@ -1,0 +1,58 @@
+# Stream Configuration for Traffic Congestion Analysis
+# This file configures video sources for the streaming server
+
+stream_server:
+  host: "0.0.0.0"
+  port: 5000
+  debug: false
+
+# Default video sources
+sources:
+  camera1:
+    url: 0  # 0 for default webcam, or use RTSP/HTTP URL
+    name: "Default Webcam"
+    active: true
+    
+  # Example IP Camera configuration:
+  # camera2:
+  #   url: "rtsp://username:password@192.168.1.100:554/stream"
+  #   name: "IP Camera - Main Road"
+  #   active: false
+  #
+  # Example HTTP Stream:
+  # camera3:
+  #   url: "http://192.168.1.50:8080/video"
+  #   name: "HTTP Camera Feed"
+  #   active: false
+
+# Detection Settings
+detection:
+  model: "yolov8n.pt"  # yolov8n.pt (fast) or yolov8l.pt (accurate)
+  confidence: 0.3
+  iou_threshold: 0.45
+  inference_size: 640
+  
+# Counting Line Settings
+# Adjust these based on your camera view
+line:
+  y_position: 500  # Y-coordinate of counting line
+  x_start: 100
+  x_end: 1050
+
+# Firebase Configuration (optional)
+# Set to null to disable Firebase
+firebase:
+  enabled: true
+  # Credentials path - leave null to use environment variable FIREBASE_CRED_PATH
+  credentials_path: null
+  # Database URL - leave null to use environment variable FIREBASE_DB_URL
+  database_url: null
+
+# Output Settings
+output:
+  save_video: false
+  save_path: "./output"
+  
+# Processing Interval (seconds)
+# How often to process and send data to Firebase
+processing_interval: 600  # 10 minutes

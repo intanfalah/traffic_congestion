@@ -1,0 +1,600 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Traffic Congestion - Live Stream</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            min-height: 100vh;
+            color: #fff;
+        }
+        
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        
+        header {
+            text-align: center;
+            padding: 30px 0;
+            border-bottom: 2px solid #e94560;
+            margin-bottom: 30px;
+        }
+        
+        header h1 {
+            font-size: 2.5rem;
+            color: #e94560;
+            margin-bottom: 10px;
+        }
+        
+        header p {
+            color: #8892b0;
+            font-size: 1.1rem;
+        }
+        
+        .main-content {
+            display: grid;
+            grid-template-columns: 1fr 350px;
+            gap: 30px;
+        }
+        
+        @media (max-width: 1024px) {
+            .main-content {
+                grid-template-columns: 1fr;
+            }
+        }
+        
+        /* Video Stream Section */
+        .video-section {
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 15px;
+            padding: 20px;
+            border: 1px solid rgba(233, 69, 96, 0.3);
+        }
+        
+        .video-container {
+            position: relative;
+            width: 100%;
+            background: #000;
+            border-radius: 10px;
+            overflow: hidden;
+            aspect-ratio: 16/9;
+        }
+        
+        .video-stream {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+        }
+        
+        .stream-overlay {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 8px 15px;
+            border-radius: 20px;
+            font-size: 0.85rem;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .status-indicator {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: #4CAF50;
+            animation: pulse 2s infinite;
+        }
+        
+        .status-indicator.offline {
+            background: #f44336;
+            animation: none;
+        }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        
+        .stream-info {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 15px;
+            padding: 15px;
+            background: rgba(233, 69, 96, 0.1);
+            border-radius: 10px;
+        }
+        
+        .info-item {
+            text-align: center;
+        }
+        
+        .info-item .label {
+            color: #8892b0;
+            font-size: 0.85rem;
+            margin-bottom: 5px;
+        }
+        
+        .info-item .value {
+            font-size: 1.3rem;
+            font-weight: bold;
+            color: #e94560;
+        }
+        
+        /* Sidebar */
+        .sidebar {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+        
+        .panel {
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 15px;
+            padding: 20px;
+            border: 1px solid rgba(233, 69, 96, 0.3);
+        }
+        
+        .panel h3 {
+            color: #e94560;
+            margin-bottom: 15px;
+            font-size: 1.2rem;
+            border-bottom: 1px solid rgba(233, 69, 96, 0.3);
+            padding-bottom: 10px;
+        }
+        
+        /* Source Controls */
+        .source-list {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            margin-bottom: 15px;
+        }
+        
+        .source-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        
+        .source-item:hover {
+            background: rgba(233, 69, 96, 0.2);
+        }
+        
+        .source-item.active {
+            background: rgba(233, 69, 96, 0.3);
+            border: 1px solid #e94560;
+        }
+        
+        .source-info {
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .source-name {
+            font-weight: bold;
+            font-size: 0.95rem;
+        }
+        
+        .source-url {
+            font-size: 0.8rem;
+            color: #8892b0;
+            word-break: break-all;
+        }
+        
+        .source-status {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+        }
+        
+        .source-status.active {
+            background: #4CAF50;
+        }
+        
+        .source-status.inactive {
+            background: #666;
+        }
+        
+        /* Form Controls */
+        .form-group {
+            margin-bottom: 15px;
+        }
+        
+        .form-group label {
+            display: block;
+            margin-bottom: 5px;
+            color: #8892b0;
+            font-size: 0.9rem;
+        }
+        
+        .form-group input,
+        .form-group select {
+            width: 100%;
+            padding: 10px 15px;
+            border: 1px solid rgba(233, 69, 96, 0.3);
+            border-radius: 8px;
+            background: rgba(255, 255, 255, 0.05);
+            color: #fff;
+            font-size: 0.95rem;
+        }
+        
+        .form-group input:focus,
+        .form-group select:focus {
+            outline: none;
+            border-color: #e94560;
+        }
+        
+        .btn {
+            width: 100%;
+            padding: 12px;
+            border: none;
+            border-radius: 8px;
+            font-size: 1rem;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        
+        .btn-primary {
+            background: linear-gradient(135deg, #e94560 0%, #c73e54 100%);
+            color: #fff;
+        }
+        
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(233, 69, 96, 0.3);
+        }
+        
+        .btn-secondary {
+            background: rgba(255, 255, 255, 0.1);
+            color: #fff;
+            margin-top: 10px;
+        }
+        
+        .btn-secondary:hover {
+            background: rgba(255, 255, 255, 0.2);
+        }
+        
+        .btn-danger {
+            background: #f44336;
+            color: #fff;
+            margin-top: 10px;
+        }
+        
+        .btn-danger:hover {
+            background: #d32f2f;
+        }
+        
+        /* Detection Status */
+        .detection-status {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 15px;
+        }
+        
+        .stat-card {
+            background: rgba(255, 255, 255, 0.05);
+            padding: 15px;
+            border-radius: 10px;
+            text-align: center;
+        }
+        
+        .stat-card .stat-value {
+            font-size: 2rem;
+            font-weight: bold;
+            color: #e94560;
+        }
+        
+        .stat-card .stat-label {
+            font-size: 0.85rem;
+            color: #8892b0;
+            margin-top: 5px;
+        }
+        
+        /* Alert Box */
+        .alert {
+            padding: 12px 15px;
+            border-radius: 8px;
+            margin-bottom: 15px;
+            font-size: 0.9rem;
+        }
+        
+        .alert-success {
+            background: rgba(76, 175, 80, 0.2);
+            border: 1px solid #4CAF50;
+            color: #4CAF50;
+        }
+        
+        .alert-error {
+            background: rgba(244, 67, 54, 0.2);
+            border: 1px solid #f44336;
+            color: #f44336;
+        }
+        
+        .hidden {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🚦 Traffic Congestion Analysis</h1>
+            <p>Live Vehicle Detection & Traffic Monitoring Stream</p>
+        </header>
+        
+        <div class="main-content">
+            <!-- Video Stream Section -->
+            <div class="video-section">
+                <div class="video-container">
+                    <img id="videoStream" class="video-stream" src="/video_feed" alt="Live Stream">
+                    <div class="stream-overlay">
+                        <span id="statusIndicator" class="status-indicator"></span>
+                        <span id="statusText">LIVE</span>
+                    </div>
+                </div>
+                
+                <div class="stream-info">
+                    <div class="info-item">
+                        <div class="label">FPS</div>
+                        <div id="fpsValue" class="value">--</div>
+                    </div>
+                    <div class="info-item">
+                        <div class="label">Source</div>
+                        <div id="sourceValue" class="value">--</div>
+                    </div>
+                    <div class="info-item">
+                        <div class="label">Status</div>
+                        <div id="connectionValue" class="value">--</div>
+                    </div>
+                    <div class="info-item">
+                        <div class="label">Time</div>
+                        <div id="timeValue" class="value">--:--:--</div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Sidebar -->
+            <div class="sidebar">
+                <!-- Source Management -->
+                <div class="panel">
+                    <h3>📷 Video Sources</h3>
+                    
+                    <div id="alertBox" class="alert hidden"></div>
+                    
+                    <div id="sourceList" class="source-list">
+                        <!-- Sources will be populated by JS -->
+                    </div>
+                    
+                    <form id="addSourceForm">
+                        <div class="form-group">
+                            <label>Source Name</label>
+                            <input type="text" id="sourceName" placeholder="e.g., Main Road Camera" required>
+                        </div>
+                        <div class="form-group">
+                            <label>Source URL / Device ID</label>
+                            <input type="text" id="sourceUrl" placeholder="0 for webcam, or rtsp://..." required>
+                        </div>
+                        <button type="submit" class="btn btn-primary">Add Source</button>
+                    </form>
+                </div>
+                
+                <!-- Stream Controls -->
+                <div class="panel">
+                    <h3>⚙️ Stream Controls</h3>
+                    
+                    <div class="form-group">
+                        <label>Select Source</label>
+                        <select id="selectSource">
+                            <option value="">-- Select a source --</option>
+                        </select>
+                    </div>
+                    
+                    <button id="startBtn" class="btn btn-primary">Start Stream</button>
+                    <button id="stopBtn" class="btn btn-danger">Stop Stream</button>
+                </div>
+                
+                <!-- Detection Info -->
+                <div class="panel">
+                    <h3>📊 Detection Info</h3>
+                    <div class="detection-status">
+                        <div class="stat-card">
+                            <div class="stat-value" id="enteringCount">0</div>
+                            <div class="stat-label">Entering</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-value" id="leavingCount">0</div>
+                            <div class="stat-label">Leaving</div>
+                        </div>
+                    </div>
+                    <p style="margin-top: 15px; color: #8892b0; font-size: 0.85rem;">
+                        💡 Use this stream URL for detection:<br>
+                        <code style="background: rgba(0,0,0,0.3); padding: 5px; border-radius: 4px; display: inline-block; margin-top: 5px;">
+                            http://127.0.0.1:8080/video_feed
+                        </code>
+                    </p>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        // Update time
+        function updateTime() {
+            const now = new Date();
+            document.getElementById('timeValue').textContent = now.toLocaleTimeString();
+        }
+        setInterval(updateTime, 1000);
+        updateTime();
+        
+        // Show alert
+        function showAlert(message, type = 'success') {
+            const alertBox = document.getElementById('alertBox');
+            alertBox.textContent = message;
+            alertBox.className = `alert alert-${type}`;
+            alertBox.classList.remove('hidden');
+            setTimeout(() => alertBox.classList.add('hidden'), 5000);
+        }
+        
+        // Load sources
+        async function loadSources() {
+            try {
+                const response = await fetch('/api/sources');
+                const sources = await response.json();
+                
+                const sourceList = document.getElementById('sourceList');
+                const selectSource = document.getElementById('selectSource');
+                
+                sourceList.innerHTML = '';
+                selectSource.innerHTML = '<option value="">-- Select a source --</option>';
+                
+                Object.entries(sources).forEach(([id, source]) => {
+                    // Add to list
+                    const item = document.createElement('div');
+                    item.className = `source-item ${source.active ? 'active' : ''}`;
+                    item.innerHTML = `
+                        <div class="source-info">
+                            <span class="source-name">${source.name}</span>
+                            <span class="source-url">${source.url}</span>
+                        </div>
+                        <span class="source-status ${source.active ? 'active' : 'inactive'}"></span>
+                    `;
+                    sourceList.appendChild(item);
+                    
+                    // Add to select
+                    const option = document.createElement('option');
+                    option.value = source.url;
+                    option.textContent = source.name;
+                    selectSource.appendChild(option);
+                });
+            } catch (error) {
+                console.error('Failed to load sources:', error);
+            }
+        }
+        
+        // Update stream status
+        async function updateStatus() {
+            try {
+                const response = await fetch('/api/stream/status');
+                const status = await response.json();
+                
+                document.getElementById('fpsValue').textContent = status.fps || '--';
+                document.getElementById('sourceValue').textContent = status.source || '--';
+                document.getElementById('connectionValue').textContent = status.active ? 'Connected' : 'Disconnected';
+                
+                const indicator = document.getElementById('statusIndicator');
+                const statusText = document.getElementById('statusText');
+                
+                if (status.active) {
+                    indicator.classList.remove('offline');
+                    statusText.textContent = 'LIVE';
+                } else {
+                    indicator.classList.add('offline');
+                    statusText.textContent = 'OFFLINE';
+                }
+            } catch (error) {
+                document.getElementById('connectionValue').textContent = 'Error';
+                document.getElementById('statusIndicator').classList.add('offline');
+            }
+        }
+        
+        // Add source form
+        document.getElementById('addSourceForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const name = document.getElementById('sourceName').value;
+            const url = document.getElementById('sourceUrl').value;
+            const id = 'camera' + Date.now();
+            
+            try {
+                const response = await fetch('/api/sources', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ id, name, url })
+                });
+                
+                if (response.ok) {
+                    showAlert('Source added successfully');
+                    document.getElementById('addSourceForm').reset();
+                    loadSources();
+                } else {
+                    showAlert('Failed to add source', 'error');
+                }
+            } catch (error) {
+                showAlert('Error adding source', 'error');
+            }
+        });
+        
+        // Start stream
+        document.getElementById('startBtn').addEventListener('click', async () => {
+            const sourceUrl = document.getElementById('selectSource').value;
+            const sourceName = document.getElementById('selectSource').options[document.getElementById('selectSource').selectedIndex].text;
+            
+            if (!sourceUrl) {
+                showAlert('Please select a source', 'error');
+                return;
+            }
+            
+            try {
+                const response = await fetch('/api/stream/start', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ source: sourceUrl, name: sourceName })
+                });
+                
+                const result = await response.json();
+                if (result.success) {
+                    showAlert('Stream started successfully');
+                    loadSources();
+                    // Refresh video stream
+                    document.getElementById('videoStream').src = '/video_feed?' + Date.now();
+                } else {
+                    showAlert(result.message, 'error');
+                }
+            } catch (error) {
+                showAlert('Error starting stream', 'error');
+            }
+        });
+        
+        // Stop stream
+        document.getElementById('stopBtn').addEventListener('click', async () => {
+            try {
+                const response = await fetch('/api/stream/stop', {
+                    method: 'POST'
+                });
+                
+                const result = await response.json();
+                if (result.success) {
+                    showAlert('Stream stopped');
+                    loadSources();
+                }
+            } catch (error) {
+                showAlert('Error stopping stream', 'error');
+            }
+        });
+        
+        // Initialize
+        loadSources();
+        setInterval(updateStatus, 2000);
+        updateStatus();
+    </script>
+</body>
+</html>

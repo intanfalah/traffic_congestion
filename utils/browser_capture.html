@@ -1,0 +1,394 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CCTV Stream URL Capture Tool</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #1a1a2e;
+            color: #fff;
+            padding: 20px;
+            line-height: 1.6;
+        }
+        
+        .container {
+            max-width: 1000px;
+            margin: 0 auto;
+        }
+        
+        h1 {
+            color: #e94560;
+            margin-bottom: 10px;
+        }
+        
+        .subtitle {
+            color: #8892b0;
+            margin-bottom: 30px;
+        }
+        
+        .card {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(233, 69, 96, 0.3);
+            border-radius: 10px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+        
+        .card h2 {
+            color: #e94560;
+            margin-bottom: 15px;
+            font-size: 1.2rem;
+        }
+        
+        .step {
+            display: flex;
+            gap: 15px;
+            margin-bottom: 15px;
+            padding: 15px;
+            background: rgba(255, 255, 255, 0.03);
+            border-radius: 8px;
+        }
+        
+        .step-number {
+            width: 30px;
+            height: 30px;
+            background: #e94560;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            flex-shrink: 0;
+        }
+        
+        .step-content {
+            flex: 1;
+        }
+        
+        .step-content h3 {
+            margin-bottom: 5px;
+            color: #fff;
+        }
+        
+        .step-content p {
+            color: #8892b0;
+            font-size: 0.9rem;
+        }
+        
+        code {
+            background: rgba(0, 0, 0, 0.3);
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-family: 'Courier New', monospace;
+            color: #4CAF50;
+        }
+        
+        .input-group {
+            margin-bottom: 15px;
+        }
+        
+        .input-group label {
+            display: block;
+            margin-bottom: 5px;
+            color: #8892b0;
+        }
+        
+        .input-group input,
+        .input-group textarea {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid rgba(233, 69, 96, 0.3);
+            border-radius: 5px;
+            background: rgba(0, 0, 0, 0.2);
+            color: #fff;
+            font-family: 'Courier New', monospace;
+        }
+        
+        .input-group textarea {
+            min-height: 100px;
+            resize: vertical;
+        }
+        
+        button {
+            background: linear-gradient(135deg, #e94560 0%, #c73e54 100%);
+            color: #fff;
+            border: none;
+            padding: 12px 30px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 1rem;
+            font-weight: bold;
+            transition: transform 0.2s;
+        }
+        
+        button:hover {
+            transform: translateY(-2px);
+        }
+        
+        .result {
+            margin-top: 20px;
+            padding: 15px;
+            background: rgba(76, 175, 80, 0.1);
+            border: 1px solid #4CAF50;
+            border-radius: 5px;
+            display: none;
+        }
+        
+        .result.show {
+            display: block;
+        }
+        
+        .result h3 {
+            color: #4CAF50;
+            margin-bottom: 10px;
+        }
+        
+        .result pre {
+            background: rgba(0, 0, 0, 0.3);
+            padding: 10px;
+            border-radius: 5px;
+            overflow-x: auto;
+        }
+        
+        .tips {
+            background: rgba(255, 193, 7, 0.1);
+            border: 1px solid #FFC107;
+            padding: 15px;
+            border-radius: 5px;
+            margin-top: 20px;
+        }
+        
+        .tips h3 {
+            color: #FFC107;
+            margin-bottom: 10px;
+        }
+        
+        .tips ul {
+            margin-left: 20px;
+            color: #8892b0;
+        }
+        
+        .tips li {
+            margin-bottom: 5px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔍 CCTV Stream URL Capture Tool</h1>
+        <p class="subtitle">Extract stream URLs from Pantau Semarang website</p>
+        
+        <div class="card">
+            <h2>📖 Instructions</h2>
+            
+            <div class="step">
+                <div class="step-number">1</div>
+                <div class="step-content">
+                    <h3>Open Pantau Semarang</h3>
+                    <p>Go to <a href="https://pantausemar.semarangkota.go.id/" target="_blank" style="color: #e94560;">https://pantausemar.semarangkota.go.id/</a> in your browser</p>
+                </div>
+            </div>
+            
+            <div class="step">
+                <div class="step-number">2</div>
+                <div class="step-content">
+                    <h3>Open Developer Tools</h3>
+                    <p>Press <code>F12</code> or <code>Ctrl+Shift+I</code> (Windows/Linux) or <code>Cmd+Option+I</code> (Mac)</p>
+                </div>
+            </div>
+            
+            <div class="step">
+                <div class="step-number">3</div>
+                <div class="step-content">
+                    <h3>Go to Network Tab</h3>
+                    <p>Click on the <code>Network</code> tab in Developer Tools</p>
+                </div>
+            </div>
+            
+            <div class="step">
+                <div class="step-number">4</div>
+                <div class="step-content">
+                    <h3>Filter for Media/Fetch</h3>
+                    <p>Click on <code>Media</code>, <code>Fetch/XHR</code>, or <code>JS</code> filter buttons</p>
+                </div>
+            </div>
+            
+            <div class="step">
+                <div class="step-number">5</div>
+                <div class="step-content">
+                    <h3>Click a CCTV Marker</h3>
+                    <p>On the map, click on any CCTV camera icon. Watch the Network tab for new requests.</p>
+                </div>
+            </div>
+            
+            <div class="step">
+                <div class="step-number">6</div>
+                <div class="step-content">
+                    <h3>Find Stream URL</h3>
+                    <p>Look for requests that contain <code>.m3u8</code>, <code>.mp4</code>, or start with <code>stream</code>. Click on them and check the Headers or Response tab.</p>
+                </div>
+            </div>
+        </div>
+        
+        <div class="card">
+            <h2>📝 Paste Captured Data</h2>
+            <p style="color: #8892b0; margin-bottom: 15px;">Paste the stream URL or network request data you captured:</p>
+            
+            <div class="input-group">
+                <label>CCTV Name</label>
+                <input type="text" id="cctvName" placeholder="e.g., Simpang Lima">
+            </div>
+            
+            <div class="input-group">
+                <label>Stream URL</label>
+                <input type="text" id="streamUrl" placeholder="https://stream.example.com/cctv.m3u8">
+            </div>
+            
+            <div class="input-group">
+                <label>Latitude (optional)</label>
+                <input type="text" id="latitude" placeholder="-6.9902">
+            </div>
+            
+            <div class="input-group">
+                <label>Longitude (optional)</label>
+                <input type="text" id="longitude" placeholder="110.4229">
+            </div>
+            
+            <div class="input-group">
+                <label>Raw Network Data (optional - paste full request/response)</label>
+                <textarea id="rawData" placeholder="Paste browser network data here..."></textarea>
+            </div>
+            
+            <button onclick="generateCommand()">Generate API Command</button>
+            
+            <div class="result" id="result">
+                <h3>✅ Generated Command</h3>
+                <p style="margin-bottom: 10px;">Run this in your terminal to add the CCTV:</p>
+                <pre id="command"></pre>
+            </div>
+        </div>
+        
+        <div class="card">
+            <h2>📊 Auto-Detect from Raw Data</h2>
+            <p style="color: #8892b0; margin-bottom: 15px;">Paste HAR data or raw network response:</p>
+            
+            <div class="input-group">
+                <textarea id="harData" placeholder="Paste HAR data or network response here..."></textarea>
+            </div>
+            
+            <button onclick="parseHarData()">Parse Data</button>
+            
+            <div class="result" id="harResult" style="background: rgba(33, 150, 243, 0.1); border-color: #2196F3;">
+                <h3 style="color: #2196F3;">📋 Parsed URLs</h3>
+                <pre id="parsedUrls"></pre>
+            </div>
+        </div>
+        
+        <div class="tips">
+            <h3>💡 Tips</h3>
+            <ul>
+                <li>Look for URLs ending in <code>.m3u8</code> (HLS streams) or <code>.mp4</code></li>
+                <li>If you see <code>blob:</code> URLs, look for the original source in the request chain</li>
+                <li>Some streams may require authentication tokens - check request headers</li>
+                <li>If the stream doesn't play, try adding <code>https://</code> prefix</li>
+                <li>Use VLC Media Player to test if a stream URL works</li>
+            </ul>
+        </div>
+    </div>
+    
+    <script>
+        function generateCommand() {
+            const name = document.getElementById('cctvName').value || 'Unknown CCTV';
+            const url = document.getElementById('streamUrl').value;
+            const lat = document.getElementById('latitude').value || '-6.9900';
+            const lng = document.getElementById('longitude').value || '110.4200';
+            
+            if (!url) {
+                alert('Please enter a stream URL');
+                return;
+            }
+            
+            const id = name.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '');
+            
+            const command = `curl -X POST http://127.0.0.1:5005/api/cctvs \\
+  -H "Content-Type: application/json" \\
+  -d '{
+    "id": "${id}",
+    "name": "${name}",
+    "latitude": ${lat},
+    "longitude": ${lng},
+    "stream_url": "${url}"
+  }' && \\
+curl -X POST http://127.0.0.1:5005/api/cctvs/${id}/start`;
+            
+            document.getElementById('command').textContent = command;
+            document.getElementById('result').classList.add('show');
+        }
+        
+        function parseHarData() {
+            const data = document.getElementById('harData').value;
+            if (!data) {
+                alert('Please paste some data');
+                return;
+            }
+            
+            // Try to find URLs in the data
+            const urls = [];
+            
+            // Look for m3u8 URLs
+            const m3u8Pattern = /https?:\/\/[^\s"'`<>]+\.m3u8/g;
+            const m3u8Matches = data.match(m3u8Pattern) || [];
+            urls.push(...m3u8Matches);
+            
+            // Look for mp4 URLs
+            const mp4Pattern = /https?:\/\/[^\s"'`<>]+\.mp4/g;
+            const mp4Matches = data.match(mp4Pattern) || [];
+            urls.push(...mp4Matches);
+            
+            // Look for rtsp URLs
+            const rtspPattern = /rtsp:\/\/[^\s"'`<>]+/g;
+            const rtspMatches = data.match(rtspPattern) || [];
+            urls.push(...rtspMatches);
+            
+            // Look for stream-related URLs
+            const streamPattern = /https?:\/\/[^\s"'`<>]*(?:stream|cctv|video)[^\s"'`<>]*/g;
+            const streamMatches = data.match(streamPattern) || [];
+            urls.push(...streamMatches);
+            
+            // Remove duplicates
+            const uniqueUrls = [...new Set(urls)];
+            
+            let result = '';
+            if (uniqueUrls.length > 0) {
+                result = `Found ${uniqueUrls.length} potential stream URLs:\n\n`;
+                uniqueUrls.forEach((url, i) => {
+                    result += `${i + 1}. ${url}\n`;
+                });
+                
+                result += '\n\nTo add these CCTVs, run:\n\n';
+                uniqueUrls.forEach((url, i) => {
+                    result += `curl -X POST http://127.0.0.1:5005/api/cctvs \\
+  -H "Content-Type: application/json" \\
+  -d '{"id": "cctv_${i+1}", "name": "CCTV ${i+1}", "latitude": -6.9900, "longitude": 110.4200, "stream_url": "${url}"}'\n\n`;
+                });
+            } else {
+                result = 'No stream URLs found in the provided data.\n\nLook for patterns like:\n';
+                result += '- URLs ending in .m3u8\n';
+                result += '- URLs containing "stream" or "cctv"\n';
+                result += '- RTSP URLs\n';
+            }
+            
+            document.getElementById('parsedUrls').textContent = result;
+            document.getElementById('harResult').classList.add('show');
+        }
+    </script>
+</body>
+</html>
