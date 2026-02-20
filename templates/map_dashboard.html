@@ -1,0 +1,679 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Smart Traffic Management - CCTV Map</title>
+    
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    
+    <!-- Font Awesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #0a0a0a;
+            color: #fff;
+        }
+        
+        /* Header */
+        .header {
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            padding: 15px 30px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 2px solid #e94560;
+            position: relative;
+            z-index: 1000;
+        }
+        
+        .header h1 {
+            font-size: 1.5rem;
+            color: #e94560;
+        }
+        
+        .header h1 i {
+            margin-right: 10px;
+        }
+        
+        .nav-links {
+            display: flex;
+            gap: 20px;
+        }
+        
+        .nav-links a {
+            color: #8892b0;
+            text-decoration: none;
+            padding: 8px 15px;
+            border-radius: 5px;
+            transition: all 0.3s;
+        }
+        
+        .nav-links a:hover,
+        .nav-links a.active {
+            color: #fff;
+            background: rgba(233, 69, 96, 0.2);
+        }
+        
+        .system-status {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            color: #4CAF50;
+        }
+        
+        .status-dot {
+            width: 10px;
+            height: 10px;
+            background: #4CAF50;
+            border-radius: 50%;
+            animation: pulse 2s infinite;
+        }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        
+        /* Main Container */
+        .main-container {
+            display: flex;
+            height: calc(100vh - 65px);
+        }
+        
+        /* Sidebar */
+        .sidebar {
+            width: 350px;
+            background: #1a1a2e;
+            border-right: 1px solid rgba(233, 69, 96, 0.3);
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .sidebar-header {
+            padding: 20px;
+            border-bottom: 1px solid rgba(233, 69, 96, 0.3);
+        }
+        
+        .sidebar-header h3 {
+            color: #e94560;
+            margin-bottom: 10px;
+        }
+        
+        .cctv-count {
+            color: #8892b0;
+            font-size: 0.9rem;
+        }
+        
+        .cctv-list {
+            flex: 1;
+            overflow-y: auto;
+            padding: 10px;
+        }
+        
+        .cctv-item {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(233, 69, 96, 0.2);
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 10px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        
+        .cctv-item:hover {
+            background: rgba(233, 69, 96, 0.1);
+            transform: translateX(5px);
+        }
+        
+        .cctv-item.active {
+            border-color: #e94560;
+            background: rgba(233, 69, 96, 0.15);
+        }
+        
+        .cctv-item-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 8px;
+        }
+        
+        .cctv-name {
+            font-weight: bold;
+            color: #fff;
+        }
+        
+        .cctv-status {
+            padding: 3px 8px;
+            border-radius: 10px;
+            font-size: 0.7rem;
+            font-weight: bold;
+        }
+        
+        .cctv-status.active {
+            background: rgba(76, 175, 80, 0.2);
+            color: #4CAF50;
+        }
+        
+        .cctv-status.inactive {
+            background: rgba(244, 67, 54, 0.2);
+            color: #f44336;
+        }
+        
+        .cctv-location {
+            color: #8892b0;
+            font-size: 0.85rem;
+            margin-bottom: 10px;
+        }
+        
+        .cctv-stats {
+            display: flex;
+            gap: 15px;
+            font-size: 0.8rem;
+        }
+        
+        .stat {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+        
+        .stat-value {
+            color: #e94560;
+            font-weight: bold;
+        }
+        
+        .congestion-badge {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 0.7rem;
+            margin-top: 8px;
+        }
+        
+        .congestion-FREE_FLOW {
+            background: rgba(76, 175, 80, 0.2);
+            color: #4CAF50;
+        }
+        
+        .congestion-MODERATE {
+            background: rgba(255, 193, 7, 0.2);
+            color: #FFC107;
+        }
+        
+        .congestion-CONGESTED {
+            background: rgba(255, 152, 0, 0.2);
+            color: #FF9800;
+        }
+        
+        .congestion-SEVERE {
+            background: rgba(244, 67, 54, 0.2);
+            color: #f44336;
+        }
+        
+        /* Map Container */
+        .map-container {
+            flex: 1;
+            position: relative;
+        }
+        
+        #map {
+            width: 100%;
+            height: 100%;
+        }
+        
+        /* Custom Map Popup */
+        .cctv-popup {
+            min-width: 400px;
+        }
+        
+        .popup-header {
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            padding: 15px;
+            border-bottom: 2px solid #e94560;
+        }
+        
+        .popup-header h3 {
+            color: #e94560;
+            margin: 0;
+        }
+        
+        .popup-stream {
+            width: 100%;
+            aspect-ratio: 16/9;
+            background: #000;
+            position: relative;
+        }
+        
+        .popup-stream img {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+        }
+        
+        .popup-stats {
+            background: #1a1a2e;
+            padding: 15px;
+        }
+        
+        .stat-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 0;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        
+        .stat-row:last-child {
+            border-bottom: none;
+        }
+        
+        .stat-label {
+            color: #8892b0;
+        }
+        
+        .stat-value {
+            font-weight: bold;
+        }
+        
+        /* Legend */
+        .map-legend {
+            position: absolute;
+            bottom: 20px;
+            right: 20px;
+            background: rgba(26, 26, 46, 0.95);
+            padding: 15px;
+            border-radius: 8px;
+            border: 1px solid rgba(233, 69, 96, 0.3);
+            z-index: 1000;
+        }
+        
+        .map-legend h4 {
+            color: #e94560;
+            margin-bottom: 10px;
+        }
+        
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 8px;
+            font-size: 0.85rem;
+        }
+        
+        .legend-color {
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+        }
+        
+        /* Responsive */
+        @media (max-width: 768px) {
+            .sidebar {
+                width: 100%;
+                position: absolute;
+                z-index: 999;
+                transform: translateX(-100%);
+                transition: transform 0.3s;
+            }
+            
+            .sidebar.open {
+                transform: translateX(0);
+            }
+            
+            .cctv-popup {
+                min-width: 300px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <header class="header">
+        <h1><i class="fas fa-traffic-light"></i> Smart Traffic Management</h1>
+        <nav class="nav-links">
+            <a href="/" class="active"><i class="fas fa-map-marked-alt"></i> CCTV Map</a>
+            <a href="/traffic-status"><i class="fas fa-road"></i> Traffic Status</a>
+        </nav>
+        <div class="system-status">
+            <span class="status-dot"></span>
+            <span>System Online</span>
+        </div>
+    </header>
+    
+    <div class="main-container">
+        <!-- Sidebar -->
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <h3><i class="fas fa-video"></i> CCTV Locations</h3>
+                <div class="cctv-count">
+                    <span id="activeCount">0</span> Active / 
+                    <span id="totalCount">0</span> Total
+                </div>
+            </div>
+            <div class="cctv-list" id="cctvList">
+                <!-- CCTV items will be populated here -->
+            </div>
+        </aside>
+        
+        <!-- Map -->
+        <div class="map-container">
+            <div id="map"></div>
+            
+            <!-- Legend -->
+            <div class="map-legend">
+                <h4>Traffic Status</h4>
+                <div class="legend-item">
+                    <div class="legend-color" style="background: #4CAF50;"></div>
+                    <span>Free Flow (< 10 v/m)</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color" style="background: #FFC107;"></div>
+                    <span>Moderate (10-30 v/m)</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color" style="background: #FF9800;"></div>
+                    <span>Congested (30-60 v/m)</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color" style="background: #f44336;"></div>
+                    <span>Severe (> 60 v/m)</span>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Leaflet JS -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <!-- Socket.IO -->
+    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+    
+    <script>
+        // Global variables
+        let map;
+        let markers = {};
+        let cctvs = {};
+        let trafficData = {};
+        let socket;
+        
+        // Initialize map
+        function initMap() {
+            // Center on Semarang
+            map = L.map('map').setView([-6.9835, 110.4235], 13);
+            
+            // Add tile layer
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: '© OpenStreetMap contributors'
+            }).addTo(map);
+            
+            // Add dark mode filter
+            document.querySelector('.leaflet-tile-pane').style.filter = 'invert(100%) hue-rotate(180deg) brightness(95%) contrast(90%)';
+        }
+        
+        // Get color based on congestion level
+        function getCongestionColor(level) {
+            const colors = {
+                'FREE_FLOW': '#4CAF50',
+                'MODERATE': '#FFC107',
+                'CONGESTED': '#FF9800',
+                'SEVERE': '#f44336',
+                'UNKNOWN': '#9E9E9E'
+            };
+            return colors[level] || colors['UNKNOWN'];
+        }
+        
+        // Create custom marker icon
+        function createMarkerIcon(congestionLevel) {
+            const color = getCongestionColor(congestionLevel);
+            return L.divIcon({
+                className: 'cctv-marker',
+                html: `<div style="
+                    background: ${color};
+                    width: 24px;
+                    height: 24px;
+                    border-radius: 50%;
+                    border: 3px solid white;
+                    box-shadow: 0 2px 5px rgba(0,0,0,0.3);
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                ">
+                    <i class="fas fa-video" style="color: white; font-size: 10px;"></i>
+                </div>`,
+                iconSize: [24, 24],
+                iconAnchor: [12, 12]
+            });
+        }
+        
+        // Add CCTV marker to map
+        function addCCTVMarker(cctv) {
+            const traffic = trafficData[cctv.id] || {};
+            const congestionLevel = traffic.congestion_level || 'UNKNOWN';
+            
+            const marker = L.marker([cctv.latitude, cctv.longitude], {
+                icon: createMarkerIcon(congestionLevel)
+            }).addTo(map);
+            
+            // Create popup content
+            const popupContent = createPopupContent(cctv, traffic);
+            marker.bindPopup(popupContent, {
+                maxWidth: 450,
+                className: 'cctv-popup-container'
+            });
+            
+            marker.on('popupopen', () => {
+                startStreamRefresh(cctv.id);
+            });
+            
+            marker.on('popupclose', () => {
+                stopStreamRefresh(cctv.id);
+            });
+            
+            markers[cctv.id] = marker;
+        }
+        
+        // Create popup HTML content
+        function createPopupContent(cctv, traffic) {
+            const vehicleCount = traffic.vehicle_count || 0;
+            const vpm = traffic.vehicles_per_minute || 0;
+            const los = traffic.los || '-';
+            const congestion = traffic.congestion_level || 'UNKNOWN';
+            
+            return `
+                <div class="cctv-popup">
+                    <div class="popup-header">
+                        <h3><i class="fas fa-video"></i> ${cctv.name}</h3>
+                    </div>
+                    <div class="popup-stream">
+                        <img id="stream-${cctv.id}" src="/stream/${cctv.id}?t=${Date.now()}" 
+                             alt="Live Stream" onerror="this.src='/static/images/no-signal.jpg'">
+                    </div>
+                    <div class="popup-stats">
+                        <div class="stat-row">
+                            <span class="stat-label"><i class="fas fa-car"></i> Vehicle Count</span>
+                            <span class="stat-value" id="count-${cctv.id}">${vehicleCount}</span>
+                        </div>
+                        <div class="stat-row">
+                            <span class="stat-label"><i class="fas fa-tachometer-alt"></i> Vehicles/Min</span>
+                            <span class="stat-value" id="vpm-${cctv.id}">${vpm.toFixed(1)}</span>
+                        </div>
+                        <div class="stat-row">
+                            <span class="stat-label"><i class="fas fa-chart-line"></i> Congestion</span>
+                            <span class="stat-value congestion-${congestion}">${congestion}</span>
+                        </div>
+                        <div class="stat-row">
+                            <span class="stat-label"><i class="fas fa-layer-group"></i> LOS</span>
+                            <span class="stat-value">${los}</span>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+        
+        // Stream refresh intervals
+        const streamIntervals = {};
+        
+        function startStreamRefresh(cctvId) {
+            // Refresh stream image every 100ms for smooth video
+            streamIntervals[cctvId] = setInterval(() => {
+                const img = document.getElementById(`stream-${cctvId}`);
+                if (img) {
+                    img.src = `/stream/${cctvId}?t=${Date.now()}`;
+                }
+            }, 100);
+        }
+        
+        function stopStreamRefresh(cctvId) {
+            if (streamIntervals[cctvId]) {
+                clearInterval(streamIntervals[cctvId]);
+                delete streamIntervals[cctvId];
+            }
+        }
+        
+        // Update sidebar list
+        function updateSidebar() {
+            const list = document.getElementById('cctvList');
+            list.innerHTML = '';
+            
+            let activeCount = 0;
+            
+            Object.values(cctvs).forEach(cctv => {
+                if (cctv.status === 'active') activeCount++;
+                
+                const traffic = trafficData[cctv.id] || {};
+                const congestion = traffic.congestion_level || 'UNKNOWN';
+                const vpm = traffic.vehicles_per_minute || 0;
+                
+                const item = document.createElement('div');
+                item.className = `cctv-item ${cctv.status}`;
+                item.innerHTML = `
+                    <div class="cctv-item-header">
+                        <span class="cctv-name">${cctv.name}</span>
+                        <span class="cctv-status ${cctv.status}">${cctv.status}</span>
+                    </div>
+                    <div class="cctv-location">
+                        <i class="fas fa-map-marker-alt"></i> 
+                        ${cctv.latitude.toFixed(4)}, ${cctv.longitude.toFixed(4)}
+                    </div>
+                    <div class="cctv-stats">
+                        <div class="stat">
+                            <i class="fas fa-car"></i>
+                            <span class="stat-value">${traffic.vehicle_count || 0}</span>
+                        </div>
+                        <div class="stat">
+                            <i class="fas fa-tachometer-alt"></i>
+                            <span class="stat-value">${vpm.toFixed(0)}/min</span>
+                        </div>
+                    </div>
+                    <span class="congestion-badge congestion-${congestion}">${congestion}</span>
+                `;
+                
+                item.addEventListener('click', () => {
+                    map.setView([cctv.latitude, cctv.longitude], 16);
+                    markers[cctv.id].openPopup();
+                });
+                
+                list.appendChild(item);
+            });
+            
+            document.getElementById('activeCount').textContent = activeCount;
+            document.getElementById('totalCount').textContent = Object.keys(cctvs).length;
+        }
+        
+        // Update marker colors based on traffic
+        function updateMarkers() {
+            Object.keys(cctvs).forEach(id => {
+                if (markers[id]) {
+                    const traffic = trafficData[id] || {};
+                    const congestion = traffic.congestion_level || 'UNKNOWN';
+                    markers[id].setIcon(createMarkerIcon(congestion));
+                }
+            });
+        }
+        
+        // Load CCTVs from REST API (fallback or primary)
+        function loadCCTVsFromAPI() {
+            if (Object.keys(cctvs).length > 0) return; // Already loaded
+            console.log('📡 Loading CCTVs from REST API...');
+            fetch('/api/cctvs')
+                .then(r => r.json())
+                .then(data => {
+                    if (Object.keys(cctvs).length > 0) return; // Already loaded via socket
+                    console.log('📡 Got CCTVs from API:', data.cctvs.length);
+                    cctvs = {};
+                    data.cctvs.forEach(cctv => {
+                        cctvs[cctv.id] = cctv;
+                    });
+                    
+                    // Add markers
+                    Object.values(cctvs).forEach(cctv => {
+                        addCCTVMarker(cctv);
+                    });
+                    
+                    updateSidebar();
+                })
+                .catch(err => console.error('📡 API error:', err));
+        }
+        
+        // Initialize Socket.IO
+        function initSocket() {
+            socket = io();
+            
+            socket.on('connect', () => {
+                console.log('🔌 Socket connected!');
+                // Try loading from API on connect as well
+                setTimeout(loadCCTVsFromAPI, 500);
+            });
+            
+            socket.on('init_data', (data) => {
+                console.log('🔌 init_data received:', data);
+                console.log('🔌 CCTVs count:', data.cctvs ? data.cctvs.length : 0);
+                cctvs = {};
+                data.cctvs.forEach(cctv => {
+                    cctvs[cctv.id] = cctv;
+                });
+                trafficData = data.traffic || {};
+                console.log('🔌 Processed cctvs:', Object.keys(cctvs));
+                
+                // Clear existing markers first
+                Object.values(markers).forEach(m => map.removeLayer(m));
+                markers = {};
+                
+                // Add markers
+                Object.values(cctvs).forEach(cctv => {
+                    addCCTVMarker(cctv);
+                });
+                
+                updateSidebar();
+            });
+            
+            socket.on('traffic_update', (data) => {
+                trafficData[data.cctv_id] = data.data;
+                updateSidebar();
+                updateMarkers();
+                
+                // Update popup if open
+                const countEl = document.getElementById(`count-${data.cctv_id}`);
+                const vpmEl = document.getElementById(`vpm-${data.cctv_id}`);
+                if (countEl) countEl.textContent = data.data.vehicle_count;
+                if (vpmEl) vpmEl.textContent = data.data.vehicles_per_minute.toFixed(1);
+            });
+        }
+        
+        // Initialize on page load
+        document.addEventListener('DOMContentLoaded', () => {
+            initMap();
+            initSocket();
+            // Fallback: if socket doesn't deliver init_data within 2s, use REST API
+            setTimeout(loadCCTVsFromAPI, 2000);
+        });
+    </script>
+</body>
+</html>

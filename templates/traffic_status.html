@@ -1,0 +1,661 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Traffic Status - Road Network</title>
+
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #0a0a0a;
+            color: #fff;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            padding: 15px 30px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 2px solid #e94560;
+        }
+
+        .header h1 {
+            font-size: 1.5rem;
+            color: #e94560;
+        }
+
+        .header h1 i {
+            margin-right: 10px;
+        }
+
+        .nav-links {
+            display: flex;
+            gap: 20px;
+        }
+
+        .nav-links a {
+            color: #8892b0;
+            text-decoration: none;
+            padding: 8px 15px;
+            border-radius: 5px;
+            transition: all 0.3s;
+        }
+
+        .nav-links a:hover,
+        .nav-links a.active {
+            color: #fff;
+            background: rgba(233, 69, 96, 0.2);
+        }
+
+        .main-container {
+            display: flex;
+            height: calc(100vh - 65px);
+        }
+
+        /* Stats Panel */
+        .stats-panel {
+            width: 400px;
+            background: #1a1a2e;
+            border-right: 1px solid rgba(233, 69, 96, 0.3);
+            display: flex;
+            flex-direction: column;
+            overflow-y: auto;
+        }
+
+        .stats-header {
+            padding: 20px;
+            border-bottom: 1px solid rgba(233, 69, 96, 0.3);
+        }
+
+        .stats-header h2 {
+            color: #e94560;
+            margin-bottom: 5px;
+        }
+
+        .last-updated {
+            color: #8892b0;
+            font-size: 0.85rem;
+        }
+
+        /* Summary Cards */
+        .summary-cards {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 15px;
+            padding: 20px;
+            border-bottom: 1px solid rgba(233, 69, 96, 0.3);
+        }
+
+        .summary-card {
+            background: rgba(255, 255, 255, 0.05);
+            padding: 15px;
+            border-radius: 8px;
+            text-align: center;
+            border: 1px solid rgba(233, 69, 96, 0.2);
+        }
+
+        .summary-card .value {
+            font-size: 2rem;
+            font-weight: bold;
+            color: #e94560;
+        }
+
+        .summary-card .label {
+            color: #8892b0;
+            font-size: 0.85rem;
+            margin-top: 5px;
+        }
+
+        /* Congestion Distribution */
+        .congestion-dist {
+            padding: 20px;
+            border-bottom: 1px solid rgba(233, 69, 96, 0.3);
+        }
+
+        .congestion-dist h3 {
+            color: #e94560;
+            margin-bottom: 15px;
+        }
+
+        .dist-bar {
+            display: flex;
+            height: 30px;
+            border-radius: 5px;
+            overflow: hidden;
+            margin-bottom: 10px;
+        }
+
+        .dist-segment {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.75rem;
+            font-weight: bold;
+            color: white;
+            transition: all 0.3s;
+        }
+
+        .dist-segment:hover {
+            opacity: 0.8;
+        }
+
+        .dist-legend {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 10px;
+            font-size: 0.8rem;
+        }
+
+        .dist-legend-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .dist-legend-color {
+            width: 16px;
+            height: 16px;
+            border-radius: 3px;
+        }
+
+        /* Road List */
+        .road-list {
+            flex: 1;
+            padding: 20px;
+            overflow-y: auto;
+        }
+
+        .road-list h3 {
+            color: #e94560;
+            margin-bottom: 15px;
+        }
+
+        .road-item {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(233, 69, 96, 0.2);
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 10px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .road-item:hover {
+            background: rgba(233, 69, 96, 0.1);
+            transform: translateX(5px);
+        }
+
+        .road-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+
+        .road-name {
+            font-weight: bold;
+            font-size: 1rem;
+        }
+
+        .road-status {
+            padding: 3px 10px;
+            border-radius: 10px;
+            font-size: 0.7rem;
+            font-weight: bold;
+        }
+
+        .road-stats {
+            display: flex;
+            gap: 20px;
+            font-size: 0.85rem;
+            color: #8892b0;
+        }
+
+        .road-stat {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+
+        .road-stat i {
+            color: #e94560;
+        }
+
+        /* Map Container */
+        .map-container {
+            flex: 1;
+            position: relative;
+        }
+
+        #map {
+            width: 100%;
+            height: 100%;
+        }
+
+        /* Congestion colors */
+        .status-FREE_FLOW {
+            background: rgba(76, 175, 80, 0.2);
+            color: #4CAF50;
+        }
+
+        .status-MODERATE {
+            background: rgba(255, 193, 7, 0.2);
+            color: #FFC107;
+        }
+
+        .status-CONGESTED {
+            background: rgba(255, 152, 0, 0.2);
+            color: #FF9800;
+        }
+
+        .status-SEVERE {
+            background: rgba(244, 67, 54, 0.2);
+            color: #f44336;
+        }
+
+        .color-FREE_FLOW {
+            background: #4CAF50;
+        }
+
+        .color-MODERATE {
+            background: #FFC107;
+        }
+
+        .color-CONGESTED {
+            background: #FF9800;
+        }
+
+        .color-SEVERE {
+            background: #f44336;
+        }
+
+        /* Info Panel */
+        .info-panel {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            background: rgba(26, 26, 46, 0.95);
+            padding: 20px;
+            border-radius: 8px;
+            border: 1px solid rgba(233, 69, 96, 0.3);
+            max-width: 300px;
+        }
+
+        .info-panel h4 {
+            color: #e94560;
+            margin-bottom: 10px;
+        }
+
+        .info-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 5px 0;
+            font-size: 0.9rem;
+        }
+    </style>
+</head>
+
+<body>
+    <header class="header">
+        <h1><i class="fas fa-road"></i> Traffic Status - Road Network</h1>
+        <nav class="nav-links">
+            <a href="/"><i class="fas fa-map-marked-alt"></i> CCTV Map</a>
+            <a href="/traffic-status" class="active"><i class="fas fa-road"></i> Traffic Status</a>
+        </nav>
+    </header>
+
+    <div class="main-container">
+        <!-- Stats Panel -->
+        <aside class="stats-panel">
+            <div class="stats-header">
+                <h2>Network Overview</h2>
+                <div class="last-updated">Last updated: <span id="lastUpdated">--</span></div>
+            </div>
+
+            <!-- Summary Cards -->
+            <div class="summary-cards">
+                <div class="summary-card">
+                    <div class="value" id="totalRoads">0</div>
+                    <div class="label">Total Roads</div>
+                </div>
+                <div class="summary-card">
+                    <div class="value" id="avgVPM">0</div>
+                    <div class="label">Avg Vehicles/Min</div>
+                </div>
+                <div class="summary-card">
+                    <div class="value" id="congestedRoads">0</div>
+                    <div class="label">Congested</div>
+                </div>
+                <div class="summary-card">
+                    <div class="value" id="systemLOS">-</div>
+                    <div class="label">System LOS</div>
+                </div>
+            </div>
+
+            <!-- Congestion Distribution -->
+            <div class="congestion-dist">
+                <h3><i class="fas fa-chart-pie"></i> Congestion Distribution</h3>
+                <div class="dist-bar" id="distBar">
+                    <!-- Filled dynamically -->
+                </div>
+                <div class="dist-legend" id="distLegend">
+                    <!-- Filled dynamically -->
+                </div>
+            </div>
+
+            <!-- Road List -->
+            <div class="road-list">
+                <h3><i class="fas fa-list"></i> Road Segments</h3>
+                <div id="roadList">
+                    <!-- Filled dynamically -->
+                </div>
+            </div>
+        </aside>
+
+        <!-- Map -->
+        <div class="map-container">
+            <div id="map"></div>
+
+            <div class="info-panel">
+                <h4><i class="fas fa-info-circle"></i> Legend</h4>
+                <div class="info-item">
+                    <span>Free Flow</span>
+                    <span style="color: #4CAF50;">> 60 km/h</span>
+                </div>
+                <div class="info-item">
+                    <span>Moderate</span>
+                    <span style="color: #FFC107;">40-60 km/h</span>
+                </div>
+                <div class="info-item">
+                    <span>Congested</span>
+                    <span style="color: #FF9800;">20-40 km/h</span>
+                </div>
+                <div class="info-item">
+                    <span>Severe</span>
+                    <span style="color: #f44336;">
+                        < 20 km/h</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+
+    <script>
+        let map;
+        let roadLayers = {};
+        let roads = {};
+        let socket;
+
+        // Initialize map
+        function initMap() {
+            map = L.map('map').setView([-6.9835, 110.4235], 13);
+
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: '© OpenStreetMap contributors'
+            }).addTo(map);
+
+            // Dark mode
+            document.querySelector('.leaflet-tile-pane').style.filter =
+                'invert(100%) hue-rotate(180deg) brightness(95%) contrast(90%)';
+        }
+
+        // Get color for congestion level
+        function getColor(level) {
+            const colors = {
+                'FREE_FLOW': '#4CAF50',
+                'MODERATE': '#FFC107',
+                'CONGESTED': '#FF9800',
+                'SEVERE': '#f44336',
+                'UNKNOWN': '#9E9E9E'
+            };
+            return colors[level] || colors['UNKNOWN'];
+        }
+
+        // Draw road segment on map
+        function drawRoadSegment(road) {
+            const coords = road.coordinates || [];
+            if (coords.length < 2) return;
+
+            const latlngs = coords.map(c => [c[0], c[1]]);
+            const color = getColor(road.congestion_level);
+
+            const polyline = L.polyline(latlngs, {
+                color: color,
+                weight: 8,
+                opacity: 0.8,
+                lineCap: 'round',
+                lineJoin: 'round'
+            }).addTo(map);
+
+            // Popup with road info
+            const popup = `
+                <div style="min-width: 200px;">
+                    <h4 style="color: #e94560; margin-bottom: 10px;">${road.name}</h4>
+                    <p><strong>Type:</strong> ${road.road_type || 'Unknown'}</p>
+                    <p><strong>Speed Limit:</strong> ${road.speed_limit || '-'} km/h</p>
+                    <p><strong>Current LOS:</strong> ${road.los || '-'}</p>
+                    <p><strong>Vehicles/Min:</strong> ${(road.vehicles_per_minute || 0).toFixed(1)}</p>
+                </div>
+            `;
+            polyline.bindPopup(popup);
+
+            roadLayers[road.id] = polyline;
+        }
+
+        // Update road segment color
+        function updateRoadSegment(roadId, congestionLevel) {
+            if (roadLayers[roadId]) {
+                roadLayers[roadId].setStyle({ color: getColor(congestionLevel) });
+            }
+        }
+
+        // Update congestion distribution bar
+        function updateDistribution(dist) {
+            const total = Object.values(dist).reduce((a, b) => a + b, 0);
+            if (total === 0) return;
+
+            const bar = document.getElementById('distBar');
+            const legend = document.getElementById('distLegend');
+
+            bar.innerHTML = '';
+            legend.innerHTML = '';
+
+            const levels = ['FREE_FLOW', 'MODERATE', 'CONGESTED', 'SEVERE'];
+            const labels = {
+                'FREE_FLOW': 'Free Flow',
+                'MODERATE': 'Moderate',
+                'CONGESTED': 'Congested',
+                'SEVERE': 'Severe'
+            };
+
+            levels.forEach(level => {
+                const count = dist[level] || 0;
+                const pct = (count / total) * 100;
+
+                // Bar segment
+                if (pct > 0) {
+                    const segment = document.createElement('div');
+                    segment.className = 'dist-segment';
+                    segment.style.width = pct + '%';
+                    segment.style.background = getColor(level);
+                    segment.textContent = count;
+                    bar.appendChild(segment);
+                }
+
+                // Legend item
+                const item = document.createElement('div');
+                item.className = 'dist-legend-item';
+                item.innerHTML = `
+                    <div class="dist-legend-color color-${level}"></div>
+                    <span>${labels[level]}: ${count}</span>
+                `;
+                legend.appendChild(item);
+            });
+        }
+
+        // Update road list
+        function updateRoadList() {
+            const list = document.getElementById('roadList');
+            list.innerHTML = '';
+
+            Object.values(roads).forEach(road => {
+                const congestion = road.congestion_level || 'UNKNOWN';
+                const vpm = road.vehicles_per_minute || 0;
+                const los = road.los || '-';
+
+                const item = document.createElement('div');
+                item.className = 'road-item';
+                item.innerHTML = `
+                    <div class="road-header">
+                        <span class="road-name">${road.name}</span>
+                        <span class="road-status status-${congestion}">${congestion}</span>
+                    </div>
+                    <div class="road-stats">
+                        <div class="road-stat">
+                            <i class="fas fa-tachometer-alt"></i>
+                            <span>${vpm.toFixed(0)} v/min</span>
+                        </div>
+                        <div class="road-stat">
+                            <i class="fas fa-layer-group"></i>
+                            <span>LOS ${los}</span>
+                        </div>
+                        <div class="road-stat">
+                            <i class="fas fa-car"></i>
+                            <span>${road.speed_limit || '-'} km/h</span>
+                        </div>
+                    </div>
+                `;
+
+                item.addEventListener('click', () => {
+                    if (roadLayers[road.id]) {
+                        map.fitBounds(roadLayers[road.id].getBounds());
+                        roadLayers[road.id].openPopup();
+                    }
+                });
+
+                list.appendChild(item);
+            });
+        }
+
+        // Update summary statistics
+        function updateSummary() {
+            const roadList = Object.values(roads);
+            const totalRoads = roadList.length;
+
+            let totalVPM = 0;
+            let congestedCount = 0;
+            let losCounts = { 'A': 0, 'B': 0, 'C': 0, 'D': 0, 'E': 0, 'F': 0 };
+
+            roadList.forEach(road => {
+                const vpm = road.vehicles_per_minute || 0;
+                totalVPM += vpm;
+
+                if (['CONGESTED', 'SEVERE'].includes(road.congestion_level)) {
+                    congestedCount++;
+                }
+
+                if (road.los) {
+                    losCounts[road.los] = (losCounts[road.los] || 0) + 1;
+                }
+            });
+
+            const avgVPM = totalRoads > 0 ? totalVPM / totalRoads : 0;
+
+            // Calculate system LOS (most frequent)
+            let systemLOS = '-';
+            let maxCount = 0;
+            for (const [los, count] of Object.entries(losCounts)) {
+                if (count > maxCount) {
+                    maxCount = count;
+                    systemLOS = los;
+                }
+            }
+
+            document.getElementById('totalRoads').textContent = totalRoads;
+            document.getElementById('avgVPM').textContent = avgVPM.toFixed(0);
+            document.getElementById('congestedRoads').textContent = congestedCount;
+            document.getElementById('systemLOS').textContent = systemLOS;
+            document.getElementById('lastUpdated').textContent = new Date().toLocaleTimeString();
+
+            // Update congestion distribution
+            const dist = {};
+            roadList.forEach(r => {
+                const level = r.congestion_level || 'UNKNOWN';
+                dist[level] = (dist[level] || 0) + 1;
+            });
+            updateDistribution(dist);
+        }
+
+        // Load road data
+        async function loadRoadData() {
+            try {
+                const response = await fetch('/api/traffic/roads');
+                const data = await response.json();
+
+                roads = {};
+                cctvToRoadMap = {}; // Reset map
+
+                data.roads.forEach(road => {
+                    roads[road.id] = road;
+                    if (road.cctv_id) {
+                        cctvToRoadMap[road.cctv_id] = road.id;
+                    }
+                    drawRoadSegment(road);
+                });
+
+                updateRoadList();
+                updateSummary();
+            } catch (error) {
+                console.error('Failed to load road data:', error);
+            }
+        }
+
+        let cctvToRoadMap = {};
+
+        // Initialize Socket.IO
+        function initSocket() {
+            socket = io();
+
+            socket.on('traffic_update', (data) => {
+                const cctvId = data.cctv_id;
+                const roadId = cctvToRoadMap[cctvId];
+
+                if (roadId && roads[roadId]) {
+                    const road = roads[roadId];
+                    road.congestion_level = data.data.congestion_level;
+                    road.los = data.data.los;
+                    road.vehicles_per_minute = data.data.vehicles_per_minute;
+                    updateRoadSegment(road.id, data.data.congestion_level);
+                    updateRoadList();
+                    updateSummary();
+                }
+            });
+        }
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', () => {
+            initMap();
+            initSocket();
+            loadRoadData();
+
+            // Refresh data periodically
+            setInterval(loadRoadData, 30000);
+        });
+    </script>
+</body>
+
+</html>

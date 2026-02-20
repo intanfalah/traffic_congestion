@@ -1,0 +1,26 @@
+[
+  {
+    "id": "cctv_001",
+    "name": "Indraprasta Imam Bonjol",
+    "latitude": -6.9785713,
+    "longitude": 110.411635,
+    "stream_url": "https://livepantau.semarangkota.go.id/3cc2431b-3ee5-4c91-8330-251c021cd510/video1_stream.m3u8",
+    "road_segment_id": "road_indraprasta"
+  },
+  {
+    "id": "cctv_002",
+    "name": "Kaligarang",
+    "latitude": -6.9957663,
+    "longitude": 110.4023126,
+    "stream_url": "https://livepantau.semarangkota.go.id/e9203185-ee2e-4eb0-83a4-46b80c3bcc1a/video1_stream.m3u8",
+    "road_segment_id": "road_kaligarang"
+  },
+  {
+    "id": "cctv_003",
+    "name": "Kalibanteng 2",
+    "latitude": -6.9845739,
+    "longitude": 110.3835144,
+    "stream_url": "https://livepantau.semarangkota.go.id/b216444c-25db-4be2-bb30-fcb044f7c83f/video1_stream.m3u8",
+    "road_segment_id": "road_kalibanteng"
+  }
+]
