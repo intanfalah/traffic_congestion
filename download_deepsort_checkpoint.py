@@ -7,7 +7,10 @@ import os
 import urllib.request
 import sys
 
-CHECKPOINT_URL = "https://github.com/ZQPei/deep_sort_pytorch/raw/master/deep_sort/deep/checkpoint/ckpt.t7"
+# ZQPei's raw GitHub path 404s (the repo stores the weights via Git LFS / Drive),
+# which silently saves an HTML error page as ckpt.t7. Use a mirror that serves
+# the real ~44MB Market1501 re-ID checkpoint as a release asset.
+CHECKPOINT_URL = "https://github.com/mikel-brostrom/Yolov5_DeepSort_Pytorch/releases/download/v.2.0/ckpt.t7"
 CHECKPOINT_PATH = "deep_sort_pytorch/deep_sort/deep/checkpoint/ckpt.t7"
 
 def download_file(url, path):

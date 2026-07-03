@@ -6,8 +6,17 @@ Main Flask application with map-based CCTV dashboard
 
 import os
 
-# Set FFmpeg options BEFORE importing cv2
-os.environ['OPENCV_FFMPEG_CAPTURE_OPTIONS'] = 'rtsp_transport;tcp|stimeout;5000000|buffer_size;1024000|max_delay;5000000'
+# Set FFmpeg options BEFORE importing cv2.
+# These feeds are HLS over HTTP (not RTSP), so use HTTP timeouts + auto-reconnect.
+# rw_timeout/timeout (microseconds) make a stalled read() return False instead of
+# blocking the detector thread forever; reconnect* lets FFmpeg re-fetch dropped
+# HLS segments. (The old RTSP-only `stimeout` did nothing here, so a stalled
+# stream hung the worker with status stuck on 'active' and no frames.)
+os.environ['OPENCV_FFMPEG_CAPTURE_OPTIONS'] = (
+    'rw_timeout;15000000|timeout;15000000|'
+    'reconnect;1|reconnect_streamed;1|reconnect_delay_max;5|'
+    'buffer_size;1024000|max_delay;5000000'
+)
 
 import json
 import threading
@@ -142,11 +151,26 @@ class TrafficSystem:
         
         return True
     
+    @staticmethod
+    def _json_safe(entry):
+        """Return a JSON-serialisable copy of a traffic-data entry.
+
+        The stored entry holds a `history` deque (not serialisable by jsonify);
+        convert it to a list and copy the rest shallowly.
+        """
+        if entry is None:
+            return None
+        safe = dict(entry)
+        hist = safe.get('history')
+        if hist is not None:
+            safe['history'] = list(hist)
+        return safe
+
     def get_traffic_status(self, cctv_id=None):
-        """Get traffic status for all or specific CCTV"""
+        """Get JSON-safe traffic status for all or a specific CCTV."""
         if cctv_id:
-            return self.traffic_data.get(cctv_id)
-        return dict(self.traffic_data)
+            return self._json_safe(self.traffic_data.get(cctv_id))
+        return {cid: self._json_safe(data) for cid, data in self.traffic_data.items()}
     
     def update_traffic_data(self, cctv_id, data):
         """Update traffic data and emit to clients"""
@@ -220,12 +244,39 @@ class DetectionWorker(threading.Thread):
         self.frame_count = 0
         self.last_process_time = time.time()
         
+    def _interruptible_sleep(self, seconds):
+        """Sleep in short slices so a stop() request is honored promptly."""
+        end = time.time() + seconds
+        while self.running and time.time() < end:
+            time.sleep(0.2)
+
+    def _open_stream(self):
+        """Try to open the video stream. Returns True and sets self.cap on success."""
+        # FFmpeg backend first (best HLS support)
+        cap = cv2.VideoCapture(self.stream_url, cv2.CAP_FFMPEG)
+        cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+        if not cap.isOpened():
+            # GStreamer HLS pipeline as fallback
+            cap.release()
+            gst_pipeline = f'souphttpsrc location={self.stream_url} ! hlsdemux ! decodebin ! videoconvert ! appsink'
+            cap = cv2.VideoCapture(gst_pipeline, cv2.CAP_GSTREAMER)
+        if cap.isOpened():
+            self.cap = cap
+            return True
+        cap.release()
+        return False
+
     def run(self):
-        """Main detection loop"""
+        """Main detection loop with automatic reconnection.
+
+        Keeps trying to (re)open the stream with exponential backoff so a CCTV
+        that is offline at startup — or that drops mid-stream — recovers on its
+        own once the upstream feed returns, instead of the worker exiting.
+        """
         self.running = True
         print(f"[Detector {self.cctv_id}] Starting...")
         print(f"[Detector {self.cctv_id}] Stream URL: {self.stream_url[:60]}...")
-        
+
         # Load YOLO model (each thread needs its own)
         print(f"[Detector {self.cctv_id}] Loading YOLO model...")
         try:
@@ -235,53 +286,81 @@ class DetectionWorker(threading.Thread):
             print(f"[Detector {self.cctv_id}] Failed to load model: {e}")
             self.system.cctvs[self.cctv_id]['status'] = 'error'
             return
-        
-        # Open stream with FFmpeg backend for HLS support
-        print(f"[Detector {self.cctv_id}] Opening with FFmpeg...")
-        self.cap = cv2.VideoCapture(self.stream_url, cv2.CAP_FFMPEG)
-        
-        # Set buffer size to reduce latency
-        self.cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
-        
-        if not self.cap.isOpened():
-            print(f"[Detector {self.cctv_id}] Failed to open stream, retrying with HTTP...")
-            # Try with GStreamer as fallback
-            gst_pipeline = f'souphttpsrc location={self.stream_url} ! hlsdemux ! decodebin ! videoconvert ! appsink'
-            self.cap = cv2.VideoCapture(gst_pipeline, cv2.CAP_GSTREAMER)
-            
-            if not self.cap.isOpened():
-                print(f"[Detector {self.cctv_id}] Failed to open stream completely")
+
+        # Reconnection backoff (seconds)
+        base_delay = 5
+        max_delay = 30
+        delay = base_delay
+        attempt = 0
+
+        # Outer loop: keep (re)connecting until stopped
+        while self.running:
+            attempt += 1
+            print(f"[Detector {self.cctv_id}] Opening stream (attempt {attempt})...")
+            self.system.cctvs[self.cctv_id]['status'] = 'connecting'
+
+            if not self._open_stream():
                 self.system.cctvs[self.cctv_id]['status'] = 'error'
-                return
-        
-        print(f"[Detector {self.cctv_id}] Stream opened successfully")
-        self.system.cctvs[self.cctv_id]['status'] = 'active'
-        
+                print(f"[Detector {self.cctv_id}] Open failed; retrying in {delay}s")
+                self._interruptible_sleep(delay)
+                delay = min(delay * 2, max_delay)
+                continue
+
+            # Connected — reset backoff for the next disconnect
+            print(f"[Detector {self.cctv_id}] Stream opened successfully")
+            self.system.cctvs[self.cctv_id]['status'] = 'active'
+            attempt = 0
+            delay = base_delay
+
+            # Read frames until the stream drops or we're stopped
+            self._process_stream()
+
+            # Stream dropped or stop requested — release and loop back to reconnect
+            if self.cap is not None:
+                self.cap.release()
+                self.cap = None
+            if self.running:
+                self.system.cctvs[self.cctv_id]['status'] = 'reconnecting'
+                self._interruptible_sleep(delay)
+
+        # Final cleanup
+        if self.cap is not None:
+            self.cap.release()
+        print(f"[Detector {self.cctv_id}] Stopped")
+
+    def _process_stream(self):
+        """Read and process frames until the stream drops or stop() is called."""
+        consecutive_failures = 0
         while self.running:
             ret, frame = self.cap.read()
             if not ret:
-                print(f"[Detector {self.cctv_id}] Stream error, reconnecting...")
-                time.sleep(1)
-                self.cap = cv2.VideoCapture(self.stream_url)
+                consecutive_failures += 1
+                # Tolerate brief hiccups; only reconnect on sustained failure
+                if consecutive_failures >= 30:
+                    print(f"[Detector {self.cctv_id}] Stream dropped, reconnecting...")
+                    return
+                time.sleep(0.1)
                 continue
-            
+
+            consecutive_failures = 0
             self.frame_count += 1
-            
-            # Process every 3rd frame for performance (10fps processing)
+
+            # Process every 3rd frame for performance (10fps processing).
+            # Guard so a single bad frame can't kill the detector thread.
             if self.frame_count % 3 == 0:
-                self.process_frame(frame)
-            
+                try:
+                    self.process_frame(frame)
+                except Exception as e:
+                    print(f"[Detector {self.cctv_id}] process_frame error: {e}")
+
             # Store in buffer for streaming
             self.frame_buffer.append(frame)
-            
+
             # Calculate traffic metrics every 10 seconds
             current_time = time.time()
             if current_time - self.last_process_time >= 10:
                 self.calculate_traffic_metrics()
                 self.last_process_time = current_time
-        
-        self.cap.release()
-        print(f"[Detector {self.cctv_id}] Stopped")
     
     def process_frame(self, frame):
         """Process a single frame for detection"""
@@ -296,14 +375,16 @@ class DetectionWorker(threading.Thread):
             
             for box in det:
                 xyxy = box.xyxy[0].cpu().numpy()
-                conf = box.conf[0].cpu().numpy()
-                cls = int(box.cls[0].cpu().numpy())
-                
-                x_c = (xyxy[0] + xyxy[2]) / 2
-                y_c = (xyxy[1] + xyxy[3]) / 2
-                w = xyxy[2] - xyxy[0]
-                h = xyxy[3] - xyxy[1]
-                
+                # Use Python floats: 0-d numpy scalars break torch.Tensor(confs)
+                # with "len() of unsized object" once DeepSORT is enabled.
+                conf = float(box.conf[0].item())
+                cls = int(box.cls[0].item())
+
+                x_c = float((xyxy[0] + xyxy[2]) / 2)
+                y_c = float((xyxy[1] + xyxy[3]) / 2)
+                w = float(xyxy[2] - xyxy[0])
+                h = float(xyxy[3] - xyxy[1])
+
                 xywh_bboxs.append([x_c, y_c, w, h])
                 confs.append([conf])
                 oids.append(cls)
@@ -442,6 +523,119 @@ class DetectionWorker(threading.Thread):
         self.running = False
 
 
+class TrafficEstimator(threading.Thread):
+    """Background density-based congestion estimator.
+
+    Samples every CCTV on a rotating schedule WITHOUT streaming video: it opens
+    a feed, grabs a frame, counts the vehicles present (density), maps that to a
+    congestion level, updates the shared traffic data, and closes the feed. Only
+    one camera is open at a time, so all cameras get live congestion colours on
+    the map without the many-concurrent-streams starvation problem.
+
+    Cameras a viewer is actively watching (their on-demand DetectionWorker is
+    running) are skipped, since that worker already reports richer flow metrics.
+    """
+
+    # COCO vehicle classes: car, motorcycle, bus, truck
+    VEHICLE_CLASSES = {2, 3, 5, 7}
+
+    def __init__(self, system, interval=30):
+        super().__init__(daemon=True)
+        self.system = system
+        self.interval = interval  # target seconds between refreshes of a camera
+        self.running = False
+        self.model = None
+
+    def run(self):
+        self.running = True
+        print(f"[Estimator] Loading YOLO model (density mode, every {self.interval}s)...")
+        self.model = YOLO('yolov8n.pt')
+        print("[Estimator] Started")
+        while self.running:
+            cctv_ids = list(self.system.cctvs.keys())
+            if not cctv_ids:
+                time.sleep(2)
+                continue
+            # Pace so a full round of all cameras takes about `interval` seconds
+            per_cam = max(self.interval / len(cctv_ids), 2)
+            for cctv_id in cctv_ids:
+                if not self.running:
+                    break
+                self._tick(cctv_id)
+                time.sleep(per_cam)
+
+    def _tick(self, cctv_id):
+        """Sample one camera unless a viewer's worker already owns its feed."""
+        det = self.system.detectors.get(cctv_id)
+        if det and getattr(det, 'running', False):
+            return
+        try:
+            self._sample(cctv_id)
+        except Exception as e:
+            print(f"[Estimator] {cctv_id} sample error: {e}")
+
+    def _sample(self, cctv_id):
+        """Open the feed briefly, count vehicles in one frame, update congestion."""
+        cctv = self.system.cctvs.get(cctv_id)
+        if not cctv:
+            return
+        cap = cv2.VideoCapture(cctv['stream_url'], cv2.CAP_FFMPEG)
+        cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+        try:
+            if not cap.isOpened():
+                return  # unreachable right now; leave last-known congestion
+            # Read a few frames and keep the most recent (skip stale buffer)
+            frame = None
+            for _ in range(5):
+                ret, f = cap.read()
+                if ret and f is not None:
+                    frame = f
+            if frame is None:
+                return
+        finally:
+            cap.release()
+
+        results = self.model(frame, conf=0.3, verbose=False)
+        boxes = results[0].boxes
+        names = results[0].names
+        count = 0
+        vehicle_types = defaultdict(int)
+        for box in boxes:
+            cls = int(box.cls[0].item())
+            if cls in self.VEHICLE_CLASSES:
+                count += 1
+                vehicle_types[names.get(cls, 'vehicle')] += 1
+
+        congestion, los = self._density_to_congestion(count)
+        self.system.update_traffic_data(cctv_id, {
+            'vehicle_count': count,
+            'density': count,
+            'vehicles_per_minute': 0,          # density mode, not a flow metric
+            'vehicle_types': dict(vehicle_types),
+            'congestion_level': congestion,
+            'los': los,
+            'source': 'density',
+            'timestamp': datetime.now().isoformat(),
+        })
+
+    @staticmethod
+    def _density_to_congestion(count):
+        """Map number of vehicles visible in one frame to a congestion level.
+
+        Thresholds are per-frame counts and camera-FOV dependent; tune per site.
+        """
+        if count < 5:
+            return 'FREE_FLOW', 'A'
+        if count < 12:
+            return 'MODERATE', 'C'
+        if count < 20:
+            return 'CONGESTED', 'D'
+        return 'SEVERE', 'F'
+
+    def stop(self):
+        self.running = False
+
+
 # Initialize system
 traffic_system = TrafficSystem()
 
@@ -559,6 +753,28 @@ def video_stream(cctv_id):
     )
 
 
+@app.route('/snapshot/<cctv_id>')
+def video_snapshot(cctv_id):
+    """Return a single JPEG frame for polling-based display"""
+    if cctv_id in traffic_system.detectors:
+        frame = traffic_system.detectors[cctv_id].get_frame()
+        if frame:
+            return Response(frame, mimetype='image/jpeg',
+                            headers={'Cache-Control': 'no-store'})
+    # Return a 1x1 black pixel when no frame is available yet
+    import base64
+    black = base64.b64decode(
+        '/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8U'
+        'HRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/2wBDAQkJCQwLDBgN'
+        'DRgyIRwhMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIy'
+        'MjL/wAARCAABAAEDASIAAhEBAxEB/8QAFAABAAAAAAAAAAAAAAAAAAAACf/EABQQAQAAAAAA'
+        'AAAAAAAAAAAAAP/EABQBAQAAAAAAAAAAAAAAAAAAAAD/xAAUEQEAAAAAAAAAAAAAAAAAAAAA'
+        '/9oADAMBAAIRAxEAPwCwABmX/9k='
+    )
+    return Response(black, mimetype='image/jpeg',
+                    headers={'Cache-Control': 'no-store'})
+
+
 def init_demo_data():
     """Initialize with demo CCTV data (Semarang area)"""
     demo_cctvs = [
@@ -631,7 +847,30 @@ if __name__ == '__main__':
     
     # Load existing CCTVs from database
     traffic_system.load_cctvs_from_db()
-    
+
+    # On-demand detection: detectors are NOT started here. The dashboard starts a
+    # camera's detector when its popup is opened and stops it when closed
+    # (POST /api/cctvs/<id>/start|stop). This keeps only the viewed camera(s)
+    # running so every stream reliably delivers video, instead of running all
+    # feeds at once and starving each other.
+    # Set AUTO_START_ALL=true to restore the old "start every camera" behaviour.
+    if os.environ.get('AUTO_START_ALL', 'false').lower() == 'true':
+        for cctv_id in list(traffic_system.cctvs.keys()):
+            ok, msg = traffic_system.start_cctv(cctv_id)
+            print(f"[Setup] start {cctv_id}: {msg}")
+    else:
+        print(f"[Setup] On-demand mode: {len(traffic_system.cctvs)} CCTVs loaded, "
+              "detectors start when a camera is opened.")
+
+    # Background density estimator: keeps live congestion on the map for ALL
+    # cameras without streaming video (samples each one briefly, ~every 30s).
+    # Set DENSITY_ESTIMATE=false to disable.
+    if os.environ.get('DENSITY_ESTIMATE', 'true').lower() == 'true':
+        interval = int(os.environ.get('DENSITY_INTERVAL', '30'))
+        traffic_system.estimator = TrafficEstimator(traffic_system, interval=interval)
+        traffic_system.estimator.start()
+        print(f"[Setup] Background density estimator running (every {interval}s).")
+
     # Load demo data only if explicitly enabled
     if os.environ.get('USE_DEMO_DATA', 'false').lower() == 'true':
         print("\n[Setup] Loading demo CCTV data...")
@@ -650,4 +889,4 @@ if __name__ == '__main__':
     print("=" * 60)
     
     # Run server
-    socketio.run(app, host='0.0.0.0', port=port, debug=False)
+    socketio.run(app, host='0.0.0.0', port=port, debug=False, allow_unsafe_werkzeug=True)

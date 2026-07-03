@@ -164,9 +164,16 @@
             color: #4CAF50;
         }
         
-        .cctv-status.inactive {
+        .cctv-status.inactive,
+        .cctv-status.error {
             background: rgba(244, 67, 54, 0.2);
             color: #f44336;
+        }
+
+        .cctv-status.connecting,
+        .cctv-status.reconnecting {
+            background: rgba(255, 193, 7, 0.2);
+            color: #FFC107;
         }
         
         .cctv-location {
@@ -469,11 +476,17 @@
             });
             
             marker.on('popupopen', () => {
+                // On-demand: start this camera's detector, then poll its frames.
+                fetch(`/api/cctvs/${cctv.id}/start`, { method: 'POST' })
+                    .catch(err => console.error('start error:', err));
                 startStreamRefresh(cctv.id);
             });
-            
+
             marker.on('popupclose', () => {
+                // Stop polling and shut the detector down to free the stream.
                 stopStreamRefresh(cctv.id);
+                fetch(`/api/cctvs/${cctv.id}/stop`, { method: 'POST' })
+                    .catch(err => console.error('stop error:', err));
             });
             
             markers[cctv.id] = marker;
@@ -492,7 +505,7 @@
                         <h3><i class="fas fa-video"></i> ${cctv.name}</h3>
                     </div>
                     <div class="popup-stream">
-                        <img id="stream-${cctv.id}" src="/stream/${cctv.id}?t=${Date.now()}" 
+                        <img id="stream-${cctv.id}" src="/snapshot/${cctv.id}?t=${Date.now()}"
                              alt="Live Stream" onerror="this.src='/static/images/no-signal.jpg'">
                     </div>
                     <div class="popup-stats">
@@ -525,7 +538,7 @@
             streamIntervals[cctvId] = setInterval(() => {
                 const img = document.getElementById(`stream-${cctvId}`);
                 if (img) {
-                    img.src = `/stream/${cctvId}?t=${Date.now()}`;
+                    img.src = `/snapshot/${cctvId}?t=${Date.now()}`;
                 }
             }, 100);
         }
