@@ -389,6 +389,15 @@ class DetectionWorker(threading.Thread):
                 if cls not in VEHICLE_CLASSES:
                     continue
 
+                # Draw a box on every detected vehicle each frame, so vehicles
+                # are highlighted immediately. DeepSORT below only does counting.
+                obj_name = results[0].names.get(cls, 'vehicle')
+                x1, y1 = int(xyxy[0]), int(xyxy[1])
+                x2, y2 = int(xyxy[2]), int(xyxy[3])
+                cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
+                cv2.putText(frame, f"{obj_name} {conf:.2f}", (x1, max(y1 - 5, 12)),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
+
                 x_c = float((xyxy[0] + xyxy[2]) / 2)
                 y_c = float((xyxy[1] + xyxy[3]) / 2)
                 w = float(xyxy[2] - xyxy[0])
@@ -416,16 +425,21 @@ class DetectionWorker(threading.Thread):
         self.processed_frame = frame
     
     def track_vehicles(self, frame, outputs, names):
-        """Track and count vehicles with DeepSORT"""
+        """Count vehicles crossing the line using DeepSORT track identities.
+
+        Detection boxes are drawn in process_frame; here we only track each id's
+        vertical motion and increment the count when it crosses the line. The
+        vehicle's box is briefly redrawn blue on the frame it is counted.
+        """
         height, width = frame.shape[:2]
         line_y = height // 2
-        
+
         for output in outputs:
             x1, y1, x2, y2, track_id, cls_id = output
             x1, y1, x2, y2 = int(x1), int(y1), int(x2), int(y2)
             track_id = int(track_id)
             cls_id = int(cls_id)
-            
+
             center_y = (y1 + y2) // 2
             obj_name = names.get(cls_id, 'unknown')
 
@@ -447,17 +461,8 @@ class DetectionWorker(threading.Thread):
                     self.counted_vehicles[track_id]['counted'] = True
                     self.vehicle_count['in'] += 1
                     self.vehicle_types[obj_name] += 1
-
-            # Draw bounding box + track id/class label. Counted vehicles turn
-            # blue, still-tracking ones stay green.
-            counted = self.counted_vehicles[track_id]['counted']
-            color = (255, 128, 0) if counted else (0, 255, 0)
-            label = f"{obj_name} #{track_id}"
-            cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
-            (tw, th), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1)
-            cv2.rectangle(frame, (x1, y1 - th - 6), (x1 + tw, y1), color, -1)
-            cv2.putText(frame, label, (x1, y1 - 4),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 1)
+                    # Flash the crossing vehicle blue as count confirmation
+                    cv2.rectangle(frame, (x1, y1), (x2, y2), (255, 128, 0), 3)
     
     def simple_detection(self, frame, xywh_bboxs, confs, oids, names):
         """Simple vehicle detection without DeepSORT tracking"""
