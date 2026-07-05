@@ -53,6 +53,11 @@ app = Flask(__name__)
 app.config['SECRET_KEY'] = 'traffic-secret-key'
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading')
 
+# COCO class ids we treat as vehicles: car, motorcycle, bus, truck.
+# Filtering to these avoids YOLO false positives (train/boat/person) polluting
+# the boxes, the line-crossing count, and the density estimate.
+VEHICLE_CLASSES = {2, 3, 5, 7}
+
 # Global state
 class TrafficSystem:
     def __init__(self):
@@ -380,6 +385,10 @@ class DetectionWorker(threading.Thread):
                 conf = float(box.conf[0].item())
                 cls = int(box.cls[0].item())
 
+                # Only track/count vehicles (skip person/train/boat/etc.)
+                if cls not in VEHICLE_CLASSES:
+                    continue
+
                 x_c = float((xyxy[0] + xyxy[2]) / 2)
                 y_c = float((xyxy[1] + xyxy[3]) / 2)
                 w = float(xyxy[2] - xyxy[0])
@@ -419,7 +428,7 @@ class DetectionWorker(threading.Thread):
             
             center_y = (y1 + y2) // 2
             obj_name = names.get(cls_id, 'unknown')
-            
+
             # Initialize tracking for new vehicle
             if track_id not in self.counted_vehicles:
                 self.counted_vehicles[track_id] = {
@@ -427,9 +436,9 @@ class DetectionWorker(threading.Thread):
                     'class': obj_name,
                     'positions': deque(maxlen=10)
                 }
-            
+
             self.counted_vehicles[track_id]['positions'].append(center_y)
-            
+
             # Count when crossing the line
             positions = self.counted_vehicles[track_id]['positions']
             if len(positions) >= 2 and not self.counted_vehicles[track_id]['counted']:
@@ -438,6 +447,17 @@ class DetectionWorker(threading.Thread):
                     self.counted_vehicles[track_id]['counted'] = True
                     self.vehicle_count['in'] += 1
                     self.vehicle_types[obj_name] += 1
+
+            # Draw bounding box + track id/class label. Counted vehicles turn
+            # blue, still-tracking ones stay green.
+            counted = self.counted_vehicles[track_id]['counted']
+            color = (255, 128, 0) if counted else (0, 255, 0)
+            label = f"{obj_name} #{track_id}"
+            cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
+            (tw, th), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1)
+            cv2.rectangle(frame, (x1, y1 - th - 6), (x1 + tw, y1), color, -1)
+            cv2.putText(frame, label, (x1, y1 - 4),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 1)
     
     def simple_detection(self, frame, xywh_bboxs, confs, oids, names):
         """Simple vehicle detection without DeepSORT tracking"""

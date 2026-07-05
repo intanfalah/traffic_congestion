@@ -479,14 +479,19 @@
                 // On-demand: start this camera's detector, then poll its frames.
                 fetch(`/api/cctvs/${cctv.id}/start`, { method: 'POST' })
                     .catch(err => console.error('start error:', err));
+                // Reflect the live detector state in the sidebar badge.
+                setCctvStatus(cctv.id, 'connecting');
                 startStreamRefresh(cctv.id);
+                startStatusPoll(cctv.id);
             });
 
             marker.on('popupclose', () => {
                 // Stop polling and shut the detector down to free the stream.
                 stopStreamRefresh(cctv.id);
+                stopStatusPoll(cctv.id);
                 fetch(`/api/cctvs/${cctv.id}/stop`, { method: 'POST' })
                     .catch(err => console.error('stop error:', err));
+                setCctvStatus(cctv.id, 'inactive');
             });
             
             markers[cctv.id] = marker;
@@ -547,6 +552,38 @@
             if (streamIntervals[cctvId]) {
                 clearInterval(streamIntervals[cctvId]);
                 delete streamIntervals[cctvId];
+            }
+        }
+
+        // Live detector-status polling (keeps the sidebar badge in sync while a
+        // camera is being viewed: connecting -> active -> reconnecting/error).
+        const statusIntervals = {};
+
+        function setCctvStatus(cctvId, status) {
+            if (cctvs[cctvId] && cctvs[cctvId].status !== status) {
+                cctvs[cctvId].status = status;
+                updateSidebar();
+            }
+        }
+
+        function startStatusPoll(cctvId) {
+            stopStatusPoll(cctvId);
+            statusIntervals[cctvId] = setInterval(() => {
+                fetch(`/api/cctvs/${cctvId}/status`)
+                    .then(r => r.json())
+                    .then(d => {
+                        if (d && d.cctv && d.cctv.status) {
+                            setCctvStatus(cctvId, d.cctv.status);
+                        }
+                    })
+                    .catch(() => {});
+            }, 1500);
+        }
+
+        function stopStatusPoll(cctvId) {
+            if (statusIntervals[cctvId]) {
+                clearInterval(statusIntervals[cctvId]);
+                delete statusIntervals[cctvId];
             }
         }
         
