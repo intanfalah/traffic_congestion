@@ -372,20 +372,19 @@
                 <h4><i class="fas fa-info-circle"></i> Legend</h4>
                 <div class="info-item">
                     <span>Free Flow</span>
-                    <span style="color: #4CAF50;">> 60 km/h</span>
+                    <span style="color: #4CAF50;">&lt; 5 veh present</span>
                 </div>
                 <div class="info-item">
                     <span>Moderate</span>
-                    <span style="color: #FFC107;">40-60 km/h</span>
+                    <span style="color: #FFC107;">5-12 veh present</span>
                 </div>
                 <div class="info-item">
                     <span>Congested</span>
-                    <span style="color: #FF9800;">20-40 km/h</span>
+                    <span style="color: #FF9800;">12-20 veh present</span>
                 </div>
                 <div class="info-item">
                     <span>Severe</span>
-                    <span style="color: #f44336;">
-                        < 20 km/h</span>
+                    <span style="color: #f44336;">&gt; 20, or stopped</span>
                 </div>
             </div>
         </div>
@@ -425,42 +424,82 @@
             return colors[level] || colors['UNKNOWN'];
         }
 
-        // Draw road segment on map
+        // Popup with road info (incl. per-lane densities when available)
+        function roadPopup(road) {
+            const laneRows = (road.lanes || []).map(l =>
+                `<p><strong>Lane ${l.name}:</strong> ${l.density} veh —
+                    <span style="color:${getColor(l.congestion_level)}">${l.congestion_level}</span></p>`
+            ).join('');
+            return `
+                <div style="min-width: 200px;">
+                    <h4 style="color: #e94560; margin-bottom: 10px;">${road.name}</h4>
+                    <p><strong>Type:</strong> ${road.road_type || 'Unknown'}</p>
+                    <p><strong>Current LOS:</strong> ${road.los || '-'}</p>
+                    <p><strong>Throughput:</strong> ${(road.vehicles_per_minute || 0).toFixed(1)}/min</p>
+                    ${laneRows}
+                </div>
+            `;
+        }
+
+        // Draw road segment on map. With per-lane data the road is drawn as
+        // TWO offset parallel lines (one per lane/carriageway), each coloured
+        // by its own congestion; otherwise a single centreline.
         function drawRoadSegment(road) {
             const coords = road.coordinates || [];
             if (coords.length < 2) return;
 
-            const latlngs = coords.map(c => [c[0], c[1]]);
-            const color = getColor(road.congestion_level);
+            // Redraw-safe: drop any previous layers for this road (also fixes
+            // the layer pile-up from the 30s refresh re-adding polylines)
+            (roadLayers[road.id] || []).forEach(l => map.removeLayer(l));
 
-            const polyline = L.polyline(latlngs, {
-                color: color,
-                weight: 8,
-                opacity: 0.8,
-                lineCap: 'round',
-                lineJoin: 'round'
-            }).addTo(map);
+            const popup = roadPopup(road);
+            const layers = [];
 
-            // Popup with road info
-            const popup = `
-                <div style="min-width: 200px;">
-                    <h4 style="color: #e94560; margin-bottom: 10px;">${road.name}</h4>
-                    <p><strong>Type:</strong> ${road.road_type || 'Unknown'}</p>
-                    <p><strong>Speed Limit:</strong> ${road.speed_limit || '-'} km/h</p>
-                    <p><strong>Current LOS:</strong> ${road.los || '-'}</p>
-                    <p><strong>Vehicles/Min:</strong> ${(road.vehicles_per_minute || 0).toFixed(1)}</p>
-                </div>
-            `;
-            polyline.bindPopup(popup);
+            if (road.lanes && road.lanes.length) {
+                road.lanes.forEach(lane => {
+                    const latlngs = (lane.coordinates || []).map(c => [c[0], c[1]]);
+                    if (latlngs.length < 2) return;
+                    const pl = L.polyline(latlngs, {
+                        color: getColor(lane.congestion_level),
+                        weight: 5,
+                        opacity: 0.9,
+                        lineCap: 'round',
+                        lineJoin: 'round'
+                    }).addTo(map);
+                    pl.bindPopup(popup);
+                    pl._laneName = lane.name;
+                    layers.push(pl);
+                });
+            }
+            if (!layers.length) {
+                const latlngs = coords.map(c => [c[0], c[1]]);
+                const pl = L.polyline(latlngs, {
+                    color: getColor(road.congestion_level),
+                    weight: 8,
+                    opacity: 0.8,
+                    lineCap: 'round',
+                    lineJoin: 'round'
+                }).addTo(map);
+                pl.bindPopup(popup);
+                layers.push(pl);
+            }
 
-            roadLayers[road.id] = polyline;
+            roadLayers[road.id] = layers;
         }
 
-        // Update road segment color
+        // Update road segment colours (per-lane when lane layers exist)
         function updateRoadSegment(roadId, congestionLevel) {
-            if (roadLayers[roadId]) {
-                roadLayers[roadId].setStyle({ color: getColor(congestionLevel) });
-            }
+            const layers = roadLayers[roadId] || [];
+            const road = roads[roadId];
+            layers.forEach(l => {
+                if (l._laneName && road && road.lanes) {
+                    const lane = road.lanes.find(x => x.name === l._laneName);
+                    if (lane) l.setStyle({ color: getColor(lane.congestion_level) });
+                } else {
+                    l.setStyle({ color: getColor(congestionLevel) });
+                }
+                if (road) l.setPopupContent(roadPopup(road));
+            });
         }
 
         // Update congestion distribution bar
@@ -541,9 +580,10 @@
                 `;
 
                 item.addEventListener('click', () => {
-                    if (roadLayers[road.id]) {
-                        map.fitBounds(roadLayers[road.id].getBounds());
-                        roadLayers[road.id].openPopup();
+                    const layers = roadLayers[road.id] || [];
+                    if (layers.length) {
+                        map.fitBounds(layers[0].getBounds());
+                        layers[0].openPopup();
                     }
                 });
 
@@ -636,10 +676,29 @@
 
                 if (roadId && roads[roadId]) {
                     const road = roads[roadId];
-                    road.congestion_level = data.data.congestion_level;
-                    road.los = data.data.los;
-                    road.vehicles_per_minute = data.data.vehicles_per_minute;
-                    updateRoadSegment(road.id, data.data.congestion_level);
+                    const d = data.data;
+                    road.congestion_level = d.congestion_level;
+                    road.los = d.los;
+                    road.vehicles_per_minute = d.vehicles_per_minute;
+                    if (d.lanes) {
+                        if (road.lanes && road.lanes.length) {
+                            // Merge fresh per-lane stats into held lane geometry
+                            road.lanes.forEach(l => {
+                                const upd = d.lanes[l.name];
+                                if (upd) {
+                                    l.congestion_level = upd.congestion_level;
+                                    l.density = upd.density;
+                                    l.los = upd.los;
+                                }
+                            });
+                        } else {
+                            // First per-lane data for this road: fetch the
+                            // offset lane geometry and redraw
+                            loadRoadData();
+                            return;
+                        }
+                    }
+                    updateRoadSegment(road.id, d.congestion_level);
                     updateRoadList();
                     updateSummary();
                 }

@@ -19,6 +19,7 @@ os.environ['OPENCV_FFMPEG_CAPTURE_OPTIONS'] = (
 )
 
 import json
+import math
 import threading
 import time
 from datetime import datetime, timedelta
@@ -48,6 +49,9 @@ from deep_sort_pytorch.deep_sort import DeepSort
 # Database
 from database.db_manager import DatabaseManager
 from database.models import CCTV, RoadSegment, TrafficData
+
+# Lane splitting / road offsetting
+import lane_utils
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'traffic-secret-key'
@@ -248,6 +252,17 @@ class DetectionWorker(threading.Thread):
         self.data_deque = {}
         self.frame_count = 0
         self.last_process_time = time.time()
+
+        # Lane split line (normalised coords) for this camera + live per-lane density
+        self.split_line, self.lane_flip = lane_utils.get_split_line(cctv_id)
+        self.lane_density = {'A': 0, 'B': 0}
+
+        # Congestion signals: vehicles PRESENT per processed frame (density),
+        # and recent centroid history per DeepSORT track (speed / stopped).
+        self.density_samples = deque(maxlen=200)
+        self.lane_samples = {'A': deque(maxlen=200), 'B': deque(maxlen=200)}
+        self.track_history = {}
+        self.frame_h = None
         
     def _interruptible_sleep(self, seconds):
         """Sleep in short slices so a stop() request is honored promptly."""
@@ -372,7 +387,10 @@ class DetectionWorker(threading.Thread):
         # Run YOLO detection
         results = self.model(frame, conf=0.3)
         det = results[0].boxes
-        
+        self.frame_h = frame.shape[0]
+        vehicles_this_frame = 0
+        lane_counts = {'A': 0, 'B': 0}
+
         if len(det) > 0:
             xywh_bboxs = []
             confs = []
@@ -389,6 +407,8 @@ class DetectionWorker(threading.Thread):
                 if cls not in VEHICLE_CLASSES:
                     continue
 
+                vehicles_this_frame += 1
+
                 # Draw a box on every detected vehicle each frame, so vehicles
                 # are highlighted immediately. DeepSORT below only does counting.
                 obj_name = results[0].names.get(cls, 'vehicle')
@@ -397,6 +417,11 @@ class DetectionWorker(threading.Thread):
                 cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
                 cv2.putText(frame, f"{obj_name} {conf:.2f}", (x1, max(y1 - 5, 12)),
                             cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
+
+                # Tally which lane this vehicle is in (by its ground point)
+                lane_counts[lane_utils.lane_of(
+                    (x1 + x2) / 2, y2, frame.shape[1], self.frame_h,
+                    self.split_line, self.lane_flip)] += 1
 
                 x_c = float((xyxy[0] + xyxy[2]) / 2)
                 y_c = float((xyxy[1] + xyxy[3]) / 2)
@@ -420,6 +445,11 @@ class DetectionWorker(threading.Thread):
                 # Simple detection without tracking - just count vehicles
                 self.simple_detection(frame, xywh_bboxs, confs, oids, results[0].names)
         
+        # Record how many vehicles are PRESENT in this frame (density signal)
+        self.density_samples.append(vehicles_this_frame)
+        self.lane_samples['A'].append(lane_counts['A'])
+        self.lane_samples['B'].append(lane_counts['B'])
+
         # Draw overlay
         self.draw_overlay(frame)
         self.processed_frame = frame
@@ -442,6 +472,10 @@ class DetectionWorker(threading.Thread):
 
             center_y = (y1 + y2) // 2
             obj_name = names.get(cls_id, 'unknown')
+
+            # Record centroid history for speed estimation (stopped detection)
+            hist = self.track_history.setdefault(track_id, deque(maxlen=15))
+            hist.append((time.time(), (x1 + x2) // 2, center_y))
 
             # Initialize tracking for new vehicle
             if track_id not in self.counted_vehicles:
@@ -501,39 +535,83 @@ class DetectionWorker(threading.Thread):
         cv2.putText(frame, f"Count: {self.vehicle_count['in']}", (10, 30),
                    cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
     
+    def _stopped_fraction(self):
+        """Fraction of recently-seen tracks that are (nearly) stationary.
+
+        A track counts as stopped when its centroid moved slower than ~1% of
+        the frame height per second over its recent history. Returns None when
+        there are no usable tracks (e.g. DeepSORT unavailable).
+        """
+        now = time.time()
+        stopped_speed = 0.01 * (self.frame_h or 720)  # px/sec
+        moving = stopped = 0
+        for hist in self.track_history.values():
+            if len(hist) < 2:
+                continue
+            t0, x0, y0 = hist[0]
+            t1, x1, y1 = hist[-1]
+            if now - t1 > 2 or t1 - t0 < 0.5:
+                continue  # stale track, or too short a window to measure
+            speed = math.hypot(x1 - x0, y1 - y0) / (t1 - t0)
+            if speed < stopped_speed:
+                stopped += 1
+            else:
+                moving += 1
+        total = moving + stopped
+        return (stopped / total) if total else None
+
     def calculate_traffic_metrics(self):
-        """Calculate traffic congestion metrics"""
+        """Publish traffic metrics for the last 10s window.
+
+        Congestion is classified from DENSITY (avg vehicles present) plus the
+        stopped fraction of tracked vehicles — NOT from line-crossing flow,
+        which reads near zero both on an empty road and in a gridlock.
+        vehicles_per_minute is still reported, but only as throughput.
+        """
         vehicles_per_minute = self.vehicle_count['in'] * 6  # Scale 10s to 1min
-        
-        # Determine congestion level based on vehicle count
-        if vehicles_per_minute < 10:
-            congestion = 'FREE_FLOW'
-            level = 'A'
-        elif vehicles_per_minute < 30:
-            congestion = 'MODERATE'
-            level = 'C'
-        elif vehicles_per_minute < 60:
-            congestion = 'CONGESTED'
-            level = 'D'
-        else:
-            congestion = 'SEVERE'
-            level = 'F'
-        
+
+        samples = list(self.density_samples)
+        density = (sum(samples) / len(samples)) if samples else 0
+        stopped_frac = self._stopped_fraction()
+        congestion, level = lane_utils.classify_congestion(density, stopped_frac)
+
+        # Per-lane average density over the window
+        lanes = {}
+        for name, lane_dq in self.lane_samples.items():
+            vals = list(lane_dq)
+            avg = (sum(vals) / len(vals)) if vals else 0
+            lc, llos = lane_utils.lane_congestion(round(avg))
+            lanes[name] = {'density': round(avg, 1),
+                           'congestion_level': lc, 'los': llos}
+
         data = {
-            'vehicle_count': self.vehicle_count['in'],
-            'vehicles_per_minute': vehicles_per_minute,
+            'vehicle_count': round(density),      # vehicles present (density)
+            'density': round(density, 1),
+            'stopped_fraction': round(stopped_frac, 2) if stopped_frac is not None else None,
+            'vehicles_per_minute': vehicles_per_minute,   # throughput only
             'vehicle_types': dict(self.vehicle_types),
             'congestion_level': congestion,
             'los': level,
+            'lanes': lanes,
+            'source': 'live',
             'timestamp': datetime.now().isoformat()
         }
-        
+
         self.system.update_traffic_data(self.cctv_id, data)
-        
-        # Reset counters
+
+        # Reset window counters
         self.vehicle_count = {'in': 0, 'out': 0}
         self.vehicle_types.clear()
         self.counted_vehicles.clear()
+        self.density_samples.clear()
+        self.lane_samples['A'].clear()
+        self.lane_samples['B'].clear()
+        # Drop stale track histories so the dict doesn't grow unbounded
+        now = time.time()
+        self.track_history = {
+            tid: h for tid, h in self.track_history.items()
+            if h and now - h[-1][0] <= 10
+        }
     
     def get_frame(self):
         """Get latest processed frame"""
@@ -620,18 +698,16 @@ class TrafficEstimator(threading.Thread):
         finally:
             cap.release()
 
-        results = self.model(frame, conf=0.3, verbose=False)
-        boxes = results[0].boxes
-        names = results[0].names
-        count = 0
-        vehicle_types = defaultdict(int)
-        for box in boxes:
-            cls = int(box.cls[0].item())
-            if cls in self.VEHICLE_CLASSES:
-                count += 1
-                vehicle_types[names.get(cls, 'vehicle')] += 1
+        h, w = frame.shape[:2]
+        split_line, flip = lane_utils.get_split_line(cctv_id)
+        count, vehicle_types, lane_counts = self._count_by_lane(
+            frame, w, h, split_line, flip)
 
         congestion, los = self._density_to_congestion(count)
+        lanes = {}
+        for name, c in lane_counts.items():
+            lc, llos = lane_utils.lane_congestion(c)
+            lanes[name] = {'density': c, 'congestion_level': lc, 'los': llos}
         self.system.update_traffic_data(cctv_id, {
             'vehicle_count': count,
             'density': count,
@@ -639,23 +715,39 @@ class TrafficEstimator(threading.Thread):
             'vehicle_types': dict(vehicle_types),
             'congestion_level': congestion,
             'los': los,
+            'lanes': lanes,
             'source': 'density',
             'timestamp': datetime.now().isoformat(),
         })
 
+    def _count_by_lane(self, frame, w, h, split_line, flip):
+        """Detect vehicles in a frame and tally total + per-lane counts."""
+        results = self.model(frame, conf=0.3, verbose=False)
+        boxes = results[0].boxes
+        names = results[0].names
+        count = 0
+        vehicle_types = defaultdict(int)
+        lane_counts = {'A': 0, 'B': 0}
+        for box in boxes:
+            cls = int(box.cls[0].item())
+            if cls not in self.VEHICLE_CLASSES:
+                continue
+            count += 1
+            vehicle_types[names.get(cls, 'vehicle')] += 1
+            # Assign to a lane by the vehicle's ground point (bottom-centre)
+            xyxy = box.xyxy[0].cpu().numpy()
+            gx = float((xyxy[0] + xyxy[2]) / 2)
+            gy = float(xyxy[3])
+            lane_counts[lane_utils.lane_of(gx, gy, w, h, split_line, flip)] += 1
+        return count, vehicle_types, lane_counts
+
     @staticmethod
     def _density_to_congestion(count):
-        """Map number of vehicles visible in one frame to a congestion level.
+        """Single-frame density -> congestion, via the shared classifier.
 
-        Thresholds are per-frame counts and camera-FOV dependent; tune per site.
+        No speed signal here (one frame, no tracks), so this is density-only.
         """
-        if count < 5:
-            return 'FREE_FLOW', 'A'
-        if count < 12:
-            return 'MODERATE', 'C'
-        if count < 20:
-            return 'CONGESTED', 'D'
-        return 'SEVERE', 'F'
+        return lane_utils.classify_congestion(count)
 
     def stop(self):
         self.running = False
@@ -725,6 +817,26 @@ def get_cctv_status(cctv_id):
     })
 
 
+@app.route('/api/cctvs/<cctv_id>/lane_line', methods=['GET', 'POST'])
+def cctv_lane_line(cctv_id):
+    """Get or set a camera's lane split line (normalised 0..1 image coords)."""
+    if request.method == 'POST':
+        data = request.json or {}
+        line = data.get('split_line')
+        # Expect [[x1,y1],[x2,y2]] with each value in 0..1
+        if (not isinstance(line, list) or len(line) != 2
+                or not all(isinstance(p, list) and len(p) == 2 for p in line)):
+            return jsonify({'success': False, 'error': 'split_line must be [[x1,y1],[x2,y2]]'}), 400
+        entry = lane_utils.set_split_line(cctv_id, line, bool(data.get('flip', False)))
+        return jsonify({'success': True, 'lane': entry})
+    split_line, flip = lane_utils.get_split_line(cctv_id)
+    return jsonify({
+        'split_line': split_line,
+        'flip': flip,
+        'calibrated': lane_utils.is_calibrated(cctv_id),
+    })
+
+
 @app.route('/api/traffic/status')
 def get_all_traffic_status():
     """Get traffic status for all CCTVs"""
@@ -733,9 +845,33 @@ def get_all_traffic_status():
 
 @app.route('/api/traffic/roads')
 def get_road_segments():
-    """Get road segments with traffic data"""
+    """Get road segments with traffic data, including per-lane offset geometry."""
     roads = traffic_system.db.get_road_segments_with_traffic()
+    for road in roads:
+        _attach_lane_geometry(road)
     return jsonify({'roads': roads})
+
+
+def _attach_lane_geometry(road):
+    """If the road's camera reports per-lane density, add two offset polylines
+    (one per lane) so the map can draw each carriageway coloured separately."""
+    coords = road.get('coordinates') or []
+    cctv_id = road.get('cctv_id')
+    traffic = traffic_system.traffic_data.get(cctv_id, {}) if cctv_id else {}
+    lanes = traffic.get('lanes')
+    if len(coords) < 2 or not lanes:
+        return
+    offsets = {'A': lane_utils.LANE_OFFSET_M, 'B': -lane_utils.LANE_OFFSET_M}
+    road['lanes'] = [
+        {
+            'name': name,
+            'congestion_level': info.get('congestion_level', 'UNKNOWN'),
+            'density': info.get('density', 0),
+            'los': info.get('los', '-'),
+            'coordinates': lane_utils.offset_polyline(coords, offsets[name]),
+        }
+        for name, info in sorted(lanes.items())
+    ]
 
 
 @socketio.on('connect')
