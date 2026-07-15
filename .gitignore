@@ -83,3 +83,7 @@ firebase-key.json
 tmp/
 temp/
 *.tmp
+.gstack/
+
+# Runtime SQLite DB (data, grows continuously — seed/copy it, don't track it)
+database/traffic.db

@@ -16,7 +16,7 @@ REAL_CCTVS = [
         "name": "Indraprasta Imam Bonjol",
         "latitude": -6.9785713,
         "longitude": 110.411635,
-        "stream_url": "https://livepantau.semarangkota.go.id/3cc2431b-3ee5-4c91-8330-251c021cd510/video1_stream.m3u8",
+        "stream_url": "https://livepantau.semarangkota.go.id/4b564d72-1628-4a40-925b-38d89103e17d/index.m3u8",
         "road_segment_id": "road_indraprasta"
     },
     {
@@ -24,7 +24,7 @@ REAL_CCTVS = [
         "name": "Kaligarang",
         "latitude": -6.9957663,
         "longitude": 110.4023126,
-        "stream_url": "https://livepantau.semarangkota.go.id/e9203185-ee2e-4eb0-83a4-46b80c3bcc1a/video1_stream.m3u8",
+        "stream_url": "https://livepantau.semarangkota.go.id/97ea4153-3b2a-4893-9272-39c31ead52de/index.m3u8",
         "road_segment_id": "road_kaligarang"
     },
     {
@@ -32,8 +32,32 @@ REAL_CCTVS = [
         "name": "Kalibanteng 2",
         "latitude": -6.9845739,
         "longitude": 110.3835144,
-        "stream_url": "https://livepantau.semarangkota.go.id/b216444c-25db-4be2-bb30-fcb044f7c83f/video1_stream.m3u8",
+        "stream_url": "https://livepantau.semarangkota.go.id/0fc16c7f-e445-4097-90b9-ab630abb06f7/index.m3u8",
         "road_segment_id": "road_kalibanteng"
+    },
+    {
+        "id": "cctv_004",
+        "name": "Simpang Lima 1 360",
+        "latitude": -6.9894534,
+        "longitude": 110.4224831,
+        "stream_url": "https://livepantau.semarangkota.go.id/796f806d-b5d7-449e-90ed-07930844d617/index.m3u8",
+        "road_segment_id": "road_simpang_lima"
+    },
+    {
+        "id": "cctv_005",
+        "name": "Tugumuda",
+        "latitude": -6.9843574,
+        "longitude": 110.40915,
+        "stream_url": "https://livepantau.semarangkota.go.id/c6b5f8a0-bfda-4a0c-bc88-46a16cf45d5f/index.m3u8",
+        "road_segment_id": "road_tugumuda"
+    },
+    {
+        "id": "cctv_006",
+        "name": "Fly Over Jatingaleh",
+        "latitude": -7.0307988,
+        "longitude": 110.4181806,
+        "stream_url": "https://livepantau.semarangkota.go.id/877bc9dd-2d47-4dd9-a70c-6e598e719665/index.m3u8",
+        "road_segment_id": "road_jatingaleh"
     }
 ]
 

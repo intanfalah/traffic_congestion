@@ -12,10 +12,12 @@ import time
 import requests
 from database.db_manager import DatabaseManager
 
-OVERPASS_URL = "https://lz4.overpass-api.de/api/interpreter"
-OVERPASS_FALLBACK_URL = "https://overpass-api.de/api/interpreter"
+OVERPASS_URL = "https://overpass-api.de/api/interpreter"
+OVERPASS_FALLBACK_URL = "https://lz4.overpass-api.de/api/interpreter"
+OVERPASS_KUMI_URL = "https://overpass.kumi.systems/api/interpreter"
 SEARCH_RADIUS_M = 150  # meters
 HIGHWAY_TYPES = "primary|secondary|tertiary|trunk"
+USER_AGENT = "traffic_congestion-osm-matcher/1.0 (+https://github.com/firmanhadi/traffic_congestion)"
 
 
 def haversine_distance(lat1, lon1, lat2, lon2):
@@ -53,7 +55,7 @@ def min_distance_to_way(lat, lon, geometry):
     return min_dist
 
 
-def query_overpass(lat, lon, radius=SEARCH_RADIUS_M, retries=2):
+def query_overpass(lat, lon, radius=SEARCH_RADIUS_M, retries=5):
     """Query Overpass API for roads near a coordinate."""
     query = f"""
 [out:json][timeout:25];
@@ -62,16 +64,18 @@ def query_overpass(lat, lon, radius=SEARCH_RADIUS_M, retries=2):
 );
 out geom;
 """
+    endpoints = [OVERPASS_KUMI_URL, OVERPASS_URL, OVERPASS_FALLBACK_URL]
+    headers = {"User-Agent": USER_AGENT}
     for attempt in range(retries + 1):
-        url = OVERPASS_URL if attempt == 0 else OVERPASS_FALLBACK_URL
+        url = endpoints[attempt % len(endpoints)]
         try:
-            r = requests.get(url, params={"data": query}, timeout=30)
+            r = requests.get(url, params={"data": query}, headers=headers, timeout=60)
             if r.status_code == 200:
                 return r.json().get("elements", [])
-            print(f"  [Overpass] HTTP {r.status_code}, attempt {attempt + 1}")
+            print(f"  [Overpass] HTTP {r.status_code} from {url}, attempt {attempt + 1}")
         except requests.RequestException as e:
-            print(f"  [Overpass] Request error: {e}, attempt {attempt + 1}")
-        time.sleep(2)
+            print(f"  [Overpass] Request error: {type(e).__name__} on {url}, attempt {attempt + 1}")
+        time.sleep(3 + attempt)
     return []
 
 
