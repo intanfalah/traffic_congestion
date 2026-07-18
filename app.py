@@ -769,6 +769,48 @@ def traffic_status():
     return render_template('traffic_status.html')
 
 
+# --- HERE-Traffic nowcast (Phase 3) ---------------------------------------
+# The network nowcast is produced by the integration repo's engine
+# (traffic-management/nowcast/engine.py), which needs the geospatial stack this
+# web process does not. It writes a static GeoJSON that we simply serve here, so
+# the tab has no heavy dependency. Regenerate with:
+#     ~/GitHub/traffic-analyses/.venv/bin/python -m nowcast.engine
+# Path is overridable so live/Drive-backed output can live elsewhere.
+def _nowcast_path(name):
+    override = os.environ.get('NOWCAST_OUTPUT_DIR')
+    base = Path(override) if override else (
+        Path(__file__).resolve().parent.parent / 'traffic-management' / 'output')
+    return base / name
+
+
+def _serve_json_file(path, missing_msg):
+    if not path.exists():
+        return jsonify({'error': 'not_generated', 'message': missing_msg}), 503
+    return Response(path.read_text(), mimetype='application/json')
+
+
+@app.route('/nowcast')
+def nowcast():
+    """HERE-Traffic network nowcast — calibrated LOS across ~5,000 HERE-covered segments."""
+    return render_template('nowcast.html')
+
+
+@app.route('/api/nowcast')
+def api_nowcast():
+    """The nowcast GeoJSON (~5,000 HERE-covered segments, now + next-15-min LOS)."""
+    return _serve_json_file(
+        _nowcast_path('nowcast_semarang.geojson'),
+        'Nowcast not generated yet. Run: '
+        '~/GitHub/traffic-analyses/.venv/bin/python -m nowcast.engine')
+
+
+@app.route('/api/nowcast/meta')
+def api_nowcast_meta():
+    """Nowcast metadata: snapshot time, provenance, LOS counts."""
+    return _serve_json_file(
+        _nowcast_path('nowcast_meta.json'), 'Nowcast metadata not generated yet.')
+
+
 @app.route('/api/cctvs')
 def get_cctvs():
     """Get all CCTV locations"""

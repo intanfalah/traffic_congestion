@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Smart Traffic Management - HERE Nowcast</title>
+
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #0a0a0a; color: #fff; }
+
+        /* Header — matches map_dashboard.html */
+        .header {
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            padding: 15px 30px; display: flex; justify-content: space-between;
+            align-items: center; border-bottom: 2px solid #e94560; position: relative; z-index: 1000;
+        }
+        .header h1 { font-size: 1.5rem; color: #e94560; }
+        .header h1 i { margin-right: 10px; }
+        .nav-links { display: flex; gap: 20px; }
+        .nav-links a {
+            color: #8892b0; text-decoration: none; padding: 8px 15px;
+            border-radius: 5px; transition: all 0.3s;
+        }
+        .nav-links a:hover, .nav-links a.active { color: #fff; background: rgba(233, 69, 96, 0.2); }
+        .system-status { display: flex; align-items: center; gap: 10px; font-size: 0.85rem; color: #8892b0; }
+        .status-dot { width: 10px; height: 10px; border-radius: 50%; background: #2ecc71; box-shadow: 0 0 8px #2ecc71; }
+
+        /* Preliminary-calibration banner (honesty: the M5 fit is not validated) */
+        .prelim-banner {
+            background: rgba(241, 196, 15, 0.12); border-bottom: 1px solid rgba(241,196,15,0.4);
+            color: #f1c40f; padding: 10px 30px; font-size: 0.85rem; display: none; align-items: center; gap: 10px;
+        }
+        .prelim-banner.show { display: flex; }
+
+        .main-container { position: relative; height: calc(100vh - 59px); }
+        #map { width: 100%; height: 100%; background: #eaeaea; }
+
+        /* Floating panels */
+        .panel {
+            position: absolute; background: rgba(26, 26, 46, 0.94); color: #fff;
+            border: 1px solid rgba(233, 69, 96, 0.35); border-radius: 8px;
+            padding: 14px 16px; z-index: 800; backdrop-filter: blur(4px);
+        }
+        .panel h4 { color: #e94560; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 10px; }
+
+        /* Horizon toggle */
+        .controls { top: 16px; left: 16px; }
+        .toggle-row { display: flex; gap: 6px; }
+        .toggle-row button {
+            background: #16213e; color: #8892b0; border: 1px solid #2a3a5e; padding: 8px 16px;
+            border-radius: 6px; cursor: pointer; font-size: 0.85rem; font-weight: 600; transition: all .2s;
+        }
+        .toggle-row button.active { background: #e94560; color: #fff; border-color: #e94560; }
+
+        /* Legend */
+        .legend { bottom: 24px; right: 16px; }
+        .legend .row { display: flex; align-items: center; gap: 10px; margin: 6px 0; font-size: 0.85rem; }
+        .legend .swatch { width: 26px; height: 5px; border-radius: 3px; }
+        .legend .anchor-mark { width: 14px; height: 14px; border: 3px solid #fff; border-radius: 50%; background: #16213e; }
+
+        /* Info panel */
+        .info { top: 16px; right: 16px; min-width: 230px; font-size: 0.85rem; }
+        .info .kv { display: flex; justify-content: space-between; margin: 4px 0; }
+        .info .kv span:first-child { color: #8892b0; }
+        .info .kv b { color: #fff; font-weight: 600; }
+        .info .dist { margin-top: 10px; padding-top: 10px; border-top: 1px solid rgba(255,255,255,0.1); }
+
+        .loading, .error-box {
+            position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            background: rgba(26,26,46,0.96); padding: 20px 28px; border-radius: 10px; z-index: 900; text-align: center;
+        }
+        .error-box { border: 1px solid #e94560; max-width: 460px; display: none; }
+        .error-box code { display: block; margin-top: 10px; color: #f1c40f; font-size: 0.8rem; word-break: break-all; }
+
+        .leaflet-popup-content { font-size: 0.85rem; }
+        .leaflet-popup-content .pt { font-weight: 700; color: #16213e; }
+        .leaflet-popup-content .anchor-badge {
+            display: inline-block; background: #16213e; color: #fff; font-size: 0.7rem;
+            padding: 1px 7px; border-radius: 3px; margin-left: 6px;
+        }
+    </style>
+</head>
+<body>
+    <header class="header">
+        <h1><i class="fas fa-traffic-light"></i> Smart Traffic Management</h1>
+        <nav class="nav-links">
+            <a href="/"><i class="fas fa-map-marked-alt"></i> CCTV Map</a>
+            <a href="/traffic-status"><i class="fas fa-road"></i> Traffic Status</a>
+            <a href="/nowcast" class="active"><i class="fas fa-wave-square"></i> HERE Nowcast</a>
+        </nav>
+        <div class="system-status">
+            <span class="status-dot"></span>
+            <span>Nowcast</span>
+        </div>
+    </header>
+
+    <div class="prelim-banner" id="prelimBanner">
+        <i class="fas fa-flask"></i>
+        <span id="prelimText">Kalibrasi awal — angka bersifat indikatif, belum tervalidasi.</span>
+    </div>
+
+    <div class="main-container">
+        <div id="map"></div>
+
+        <div class="loading" id="loading"><i class="fas fa-spinner fa-spin"></i> Memuat nowcast…</div>
+
+        <div class="error-box" id="errorBox">
+            <div><i class="fas fa-triangle-exclamation" style="color:#e94560"></i> <b>Nowcast belum dibuat</b></div>
+            <div id="errorMsg" style="margin-top:8px;color:#8892b0"></div>
+            <code>~/GitHub/traffic-analyses/.venv/bin/python -m nowcast.engine</code>
+        </div>
+
+        <!-- Horizon toggle -->
+        <div class="panel controls">
+            <h4>Horizon</h4>
+            <div class="toggle-row">
+                <button id="btnNow" class="active" onclick="setHorizon('now')">Sekarang</button>
+                <button id="btnNext" onclick="setHorizon('next')">+15 menit</button>
+            </div>
+        </div>
+
+        <!-- Info panel -->
+        <div class="panel info" id="infoPanel" style="display:none">
+            <h4>Kondisi Jaringan</h4>
+            <div class="kv"><span>Snapshot HERE</span><b id="mSnap">—</b></div>
+            <div class="kv"><span>Periode</span><b id="mPeriod">—</b></div>
+            <div class="kv"><span>Ruas tercakup</span><b id="mSegs">—</b></div>
+            <div class="kv"><span>Ruas berkamera</span><b id="mAnchor">—</b></div>
+            <div class="kv"><span>Koreksi langsung</span><b id="mLive">—</b></div>
+            <div class="dist" id="mDist"></div>
+        </div>
+
+        <!-- Legend -->
+        <div class="panel legend">
+            <h4>Tingkat Layanan (LOS)</h4>
+            <div class="row"><span class="swatch" style="background:#2ecc71"></span> Lancar (A–B)</div>
+            <div class="row"><span class="swatch" style="background:#f1c40f"></span> Sedang (C)</div>
+            <div class="row"><span class="swatch" style="background:#e67e22"></span> Padat (D–E)</div>
+            <div class="row"><span class="swatch" style="background:#e74c3c"></span> Macet (F)</div>
+            <div class="row"><span class="anchor-mark"></span> Ruas berkamera (kebenaran dasar)</div>
+        </div>
+    </div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script>
+        const LOS_COLOR = {
+            FREE: '#2ecc71', MODERATE: '#f1c40f', CONGESTED: '#e67e22',
+            SEVERE: '#e74c3c', UNKNOWN: '#7f8c8d'
+        };
+        const LOS_ID = { FREE: 'Lancar', MODERATE: 'Sedang', CONGESTED: 'Padat', SEVERE: 'Macet', UNKNOWN: '—' };
+
+        let map, casingLayer, segLayer, anchorLayer, geojson, horizon = 'now';
+
+        map = L.map('map').setView([-6.9835, 110.4235], 13);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '© OpenStreetMap contributors', maxZoom: 19
+        }).addTo(map);
+
+        function losOf(props) { return horizon === 'now' ? props.los_now : props.los_next; }
+        function densOf(props) { return horizon === 'now' ? props.density_now : props.density_next; }
+
+        function styleFor(feature) {
+            const p = feature.properties;
+            return {
+                color: LOS_COLOR[losOf(p)] || LOS_COLOR.UNKNOWN,
+                weight: p.anchored ? 6 : 4,
+                opacity: 0.9
+            };
+        }
+
+        function popupFor(p) {
+            const anchored = p.anchored
+                ? `<span class="anchor-badge">CCTV: ${p.cctv_name || p.cctv_id || 'ya'}</span>` : '';
+            const live = (p.live_density != null)
+                ? `<div>Kepadatan terukur: <b>${p.live_density}</b></div>` : '';
+            return `
+                <div class="pt">${p.name || p.road_type || 'Ruas jalan'} ${anchored}</div>
+                <div>Jenis jalan: ${p.road_type || '—'}</div>
+                <div>HERE jam factor: <b>${p.jam_factor}</b></div>
+                <div>Estimasi kepadatan (${horizon === 'now' ? 'sekarang' : '+15m'}): <b>${densOf(p)}</b></div>
+                <div>LOS: <b style="color:${LOS_COLOR[losOf(p)]}">${LOS_ID[losOf(p)] || losOf(p)}</b></div>
+                ${live}
+                <div style="color:#7f8c8d;font-size:0.78rem;margin-top:4px">keyakinan: ${p.confidence}</div>
+            `;
+        }
+
+        function draw() {
+            [casingLayer, segLayer, anchorLayer].forEach(l => l && map.removeLayer(l));
+
+            // White casing under anchored segments so they read as ground truth.
+            casingLayer = L.geoJSON(geojson, {
+                filter: f => f.properties.anchored,
+                style: () => ({ color: '#fff', weight: 10, opacity: 0.95 })
+            }).addTo(map);
+
+            segLayer = L.geoJSON(geojson, {
+                style: styleFor,
+                onEachFeature: (f, layer) => layer.bindPopup(popupFor(f.properties))
+            }).addTo(map);
+
+            // Small ring marker at each camera segment's midpoint.
+            const anchors = [];
+            L.geoJSON(geojson, { filter: f => f.properties.anchored }).eachLayer(l => {
+                const c = l.getBounds().getCenter();
+                anchors.push(L.circleMarker(c, {
+                    radius: 7, color: '#fff', weight: 3, fillColor: '#16213e', fillOpacity: 1
+                }).bindPopup(popupFor(l.feature.properties)));
+            });
+            anchorLayer = L.layerGroup(anchors).addTo(map);
+        }
+
+        function setHorizon(h) {
+            horizon = h;
+            document.getElementById('btnNow').classList.toggle('active', h === 'now');
+            document.getElementById('btnNext').classList.toggle('active', h === 'next');
+            if (geojson) draw();
+        }
+
+        function renderMeta(meta, fc) {
+            document.getElementById('infoPanel').style.display = 'block';
+            const md = (fc && fc.metadata) || {};
+            document.getElementById('mSnap').textContent =
+                (meta.snapshot_time || md.snapshot_time || '—').replace('T', ' ').slice(0, 16);
+            document.getElementById('mPeriod').textContent = meta.time_period || md.time_period || '—';
+            document.getElementById('mSegs').textContent = meta.segments ?? (fc ? fc.features.length : '—');
+            document.getElementById('mAnchor').textContent = meta.anchored_segments ?? '—';
+            document.getElementById('mLive').textContent =
+                (meta.live_corrected != null) ? `${meta.live_corrected} ruas` : '—';
+
+            const counts = meta.los_now_counts || {};
+            const order = ['FREE', 'MODERATE', 'CONGESTED', 'SEVERE'];
+            document.getElementById('mDist').innerHTML = order
+                .filter(k => counts[k])
+                .map(k => `<div class="kv"><span style="color:${LOS_COLOR[k]}">${LOS_ID[k]}</span><b>${counts[k]}</b></div>`)
+                .join('');
+
+            const prelim = md.preliminary || meta.calibration_provenance === 'bootstrap';
+            if (prelim) {
+                document.getElementById('prelimBanner').classList.add('show');
+                document.getElementById('prelimText').textContent =
+                    'Kalibrasi awal (' + (meta.calibration_provenance || 'bootstrap') +
+                    ') — angka indikatif, belum tervalidasi. Layer "+15 menit" memakai persistensi + difusi tetangga (Spatial Markov menyusul).';
+            }
+        }
+
+        async function load() {
+            try {
+                const [gjRes, metaRes] = await Promise.all([
+                    fetch('/api/nowcast'), fetch('/api/nowcast/meta')
+                ]);
+                if (!gjRes.ok) {
+                    const err = await gjRes.json().catch(() => ({}));
+                    throw new Error(err.message || ('HTTP ' + gjRes.status));
+                }
+                geojson = await gjRes.json();
+                const meta = metaRes.ok ? await metaRes.json() : {};
+                document.getElementById('loading').style.display = 'none';
+                renderMeta(meta, geojson);
+                draw();
+                try { map.fitBounds(segLayer.getBounds(), { padding: [30, 30] }); } catch (e) {}
+            } catch (e) {
+                document.getElementById('loading').style.display = 'none';
+                document.getElementById('errorBox').style.display = 'block';
+                document.getElementById('errorMsg').textContent = e.message;
+            }
+        }
+
+        load();
+    </script>
+</body>
+</html>
